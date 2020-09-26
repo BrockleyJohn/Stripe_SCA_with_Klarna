@@ -616,6 +616,7 @@ EOS;
               $sql_data_array = [
                 'orders_id' => $order_id,
                 'orders_status_id' => MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID,
+                'comments' => MODULE_PAYMENT_STRIPE_KLARNA_TRAN_INCOMPLETE,
                 'date_added' => 'now()',
               ];
               tep_db_perform('orders_status_history', $sql_data_array);
@@ -632,6 +633,8 @@ EOS;
     }
   
     function get_last_event_error($order_id, $customer_id) {
+      // check if we can find a recent error event for this customer
+      // if so set a detailed error in session variable, otherwise type is general
       global $klarna_error;
       if (!tep_session_is_registered('klarna_error')) {
         tep_session_register('klarna_error');
@@ -668,8 +671,9 @@ EOS;
     }
   
     function post_process() {
-      global $order_id, $cart, $order, $order_totals, $currencies, $OSCOM_Hooks, $oscTemplate, $insert_id, $products_ordered, $cart_Stripe_Klarna_ID, $stripe_source_id, $messageStack;
-      // JAF call from checkout_success and redirect to checkout if it failed after checkout process or do session cleanup otherwise 
+      // deferred from after_process to as late as possible - run from a hook in checkout success
+      // redirect to checkout if it failed after checkout process or do session cleanup otherwise 
+      global $order_id, $cart, $order, $order_totals, $currencies, $OSCOM_Hooks, $oscTemplate, $insert_id, $products_ordered, $cart_Stripe_Klarna_ID, $stripe_source_id, $messageStack, $klarna_error;
       
       $return = '';
 
@@ -719,8 +723,8 @@ EOS;
     }
   
     function complete_order_email($order_id, $customer_id) {
+      // this is run from webhook (so not customer session)
       global $currencies;
-      // JAF update to run from webhook
       
       if ((int)$order_id > 0 && tep_db_num_rows(tep_db_query('select 1 from orders where orders_id = ' . (int)$order_id . ' and customers_id = ' . (int)$customer_id))) {
         
@@ -902,70 +906,72 @@ EOS;
     }
 
     function check() {
-        if (!isset($this->_check)) {
-            $check_query = tep_db_query("select configuration_value from configuration where configuration_key = 'MODULE_PAYMENT_STRIPE_KLARNA_STATUS'");
-            $this->_check = tep_db_num_rows($check_query);
-        }
-        return $this->_check;
+      if (!isset($this->_check)) {
+        $check_query = tep_db_query("select configuration_value from configuration where configuration_key = 'MODULE_PAYMENT_STRIPE_KLARNA_STATUS'");
+        $this->_check = tep_db_num_rows($check_query);
+      }
+      return $this->_check;
     }
 
     function install($parameter = null) {
-        $params = $this->getParams();
+      $params = $this->getParams();
 
-        if (isset($parameter)) {
-            if (isset($params[$parameter])) {
-                $params = array($parameter => $params[$parameter]);
-            } else {
-                $params = array();
-            }
+      if (isset($parameter)) {
+        if (isset($params[$parameter])) {
+          $params = array($parameter => $params[$parameter]);
+        } else {
+          $params = array();
+        }
+      }
+
+      foreach ($params as $key => $data) {
+        $sql_data_array = [
+          'configuration_title' => $data['title'],
+          'configuration_key' => $key,
+          'configuration_value' => (isset($data['value']) ? $data['value'] : ''),
+          'configuration_description' => $data['desc'],
+          'configuration_group_id' => '6',
+          'sort_order' => '0',
+          'date_added' => 'now()'
+        ];
+
+        if (isset($data['set_func'])) {
+            $sql_data_array['set_function'] = $data['set_func'];
         }
 
-        foreach ($params as $key => $data) {
-            $sql_data_array = array('configuration_title' => $data['title'],
-                'configuration_key' => $key,
-                'configuration_value' => (isset($data['value']) ? $data['value'] : ''),
-                'configuration_description' => $data['desc'],
-                'configuration_group_id' => '6',
-                'sort_order' => '0',
-                'date_added' => 'now()');
-
-            if (isset($data['set_func'])) {
-                $sql_data_array['set_function'] = $data['set_func'];
-            }
-
-            if (isset($data['use_func'])) {
-                $sql_data_array['use_function'] = $data['use_func'];
-            }
-
-            tep_db_perform("configuration", $sql_data_array);
+        if (isset($data['use_func'])) {
+            $sql_data_array['use_function'] = $data['use_func'];
         }
+
+        tep_db_perform("configuration", $sql_data_array);
+      }
     }
 
     function remove() {
-        tep_db_query("delete from configuration where configuration_key in ('" . implode("', '", $this->keys()) . "')");
+      tep_db_query("delete from configuration where configuration_key in ('" . implode("', '", $this->keys()) . "')");
     }
 
     function keys() {
-        $keys = array_keys($this->getParams());
+      $keys = array_keys($this->getParams());
 
-        if ($this->check()) {
-            foreach ($keys as $key) {
-                if (!defined($key)) {
-                    $this->install($key);
-                }
-            }
+      if ($this->check()) {
+        foreach ($keys as $key) {
+          if (!defined($key)) {
+            $this->install($key);
+          }
         }
+      }
 
-        return $keys;
+      return $keys;
     }
 
     function event_log($customer_id, $action, $request, $response) {
-        if (MODULE_PAYMENT_STRIPE_KLARNA_LOG == "True") {
-            tep_db_query("insert into stripe_event_log (customer_id, action, request, response, date_added) values ('" . $customer_id . "', '" . $action . "', '" . tep_db_input($request) . "', '" . tep_db_input($response) . "', now())");
-        }
+      if (MODULE_PAYMENT_STRIPE_KLARNA_LOG == "True") {
+        tep_db_query("insert into stripe_event_log (customer_id, action, request, response, date_added) values ('" . $customer_id . "', '" . $action . "', '" . tep_db_input($request) . "', '" . tep_db_input($response) . "', now())");
+      }
     }
   
-    function checkOrderStatus($status_name) {
+    function checkOrderStatus($status_name, $public_flag = 0) {
       $check_query = tep_db_query("select orders_status_id from orders_status where orders_status_name = '{$status_name}' limit 1");
 
       if (tep_db_num_rows($check_query) < 1) {
@@ -977,12 +983,12 @@ EOS;
         $languages = tep_get_languages();
 
         foreach ($languages as $lang) {
-            tep_db_query("insert into orders_status (orders_status_id, language_id, orders_status_name) values ('" . $status_id . "', '" . $lang['id'] . "', '{$status_name}')");
+          tep_db_query("insert into orders_status (orders_status_id, language_id, orders_status_name) values ('" . $status_id . "', '" . $lang['id'] . "', '{$status_name}')");
         }
 
         $flags_query = tep_db_query("describe orders_status public_flag");
         if (tep_db_num_rows($flags_query) == 1) {
-            tep_db_query("update orders_status set public_flag = 0 and downloads_flag = 0 where orders_status_id = '" . $status_id . "'");
+          tep_db_query("update orders_status set public_flag = {$public_flag} and downloads_flag = 0 where orders_status_id = '{$status_id}'");
         }
       } else {
         $check = tep_db_fetch_array($check_query);
@@ -993,8 +999,8 @@ EOS;
     }
 
     function getParams() {
-        if (tep_db_num_rows(tep_db_query("show tables like 'stripe_event_log'")) != 1) {
-            $sql = <<<EOD
+      if (tep_db_num_rows(tep_db_query("show tables like 'stripe_event_log'")) != 1) {
+        $sql = <<<EOD
 CREATE TABLE stripe_event_log (
   id int NOT NULL auto_increment,
   customer_id int NOT NULL,
@@ -1006,130 +1012,164 @@ CREATE TABLE stripe_event_log (
 );
 EOD;
 
-            tep_db_query($sql);
+        tep_db_query($sql);
+      } else {
+        $chk_q = tep_db_query("show columns from stripe_event_log where Field in ('request', 'response') and Type like 'varchar%'");
+        if (tep_db_num_rows($chk_q)) {
+          while ($col = tep_db_fetch_array($chk_q)) {
+            tep_db_query('alter stripe_event_log modify ' . $col['Field'] . ' text');
+          }
         }
+      }
 
-        if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID')) {
-          
-          $prepare_status_id = $this->checkOrderStatus('Preparing [Stripe Klarna]');
+      if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID')) {
 
-        } else {
-            
-          $prepare_status_id = MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID;
-        }
-      
-        if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID')) {
-          
-          $status_id = $this->checkOrderStatus('Stripe Klarna [Transactions]');
+        $prepare_status_id = $this->checkOrderStatus(MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_TEXT);
 
-        } else {
-            
-          $status_id = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID;
-        }
-          
-        if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID')) {
-          
-          $app_status_id = $this->checkOrderStatus('In progress [Stripe Klarna]');
+      } else {
 
-        } else {
-            
-          $app_status_id = MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID;
-        }
-          
-        if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID')) {
-          
-          $fail_status_id = $this->checkOrderStatus('Setup failed [Stripe Klarna]');
+        $prepare_status_id = MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID;
+      }
 
-        } else {
-            
-          $fail_status_id = MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID;
-        }
+      if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID')) {
 
-        $params = array('MODULE_PAYMENT_STRIPE_KLARNA_STATUS' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_STATUS_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_STATUS_DESC,
-                'value' => 'True',
-                'set_func' => 'tep_cfg_select_option(array(\'True\', \'False\'), '),
-            'MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SERVER_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SERVER_DESC,
-                'value' => 'Live',
-                'set_func' => 'tep_cfg_select_option(array(\'Live\', \'Test\'), '),
-            'MODULE_PAYMENT_STRIPE_KLARNA_LIVE_PUBLISHABLE_KEY' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_PUB_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_PUB_DESC,
-                'value' => ''),
-            'MODULE_PAYMENT_STRIPE_KLARNA_LIVE_SECRET_KEY' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_SECRET_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_SECRET_DESC,
-                'value' => ''),
-            'MODULE_PAYMENT_STRIPE_KLARNA_LIVE_WEBHOOK_SECRET' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_WEBHOOK_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_WEBHOOK_DESC,
-                'value' => ''),
-            'MODULE_PAYMENT_STRIPE_KLARNA_TEST_PUBLISHABLE_KEY' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_PUB_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_PUB_DESC,
-                'value' => ''),
-            'MODULE_PAYMENT_STRIPE_KLARNA_TEST_SECRET_KEY' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_SECRET_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_SECRET_DESC,
-                'value' => ''),
-            'MODULE_PAYMENT_STRIPE_KLARNA_TEST_WEBHOOK_SECRET' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_WEBHOOK_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_WEBHOOK_DESC,
-                'value' => ''),
-            'MODULE_PAYMENT_STRIPE_KLARNA_TOKENS' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TOKENS_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TOKENS_DESC,
-                'value' => 'False',
-                'set_func' => 'tep_cfg_select_option(array(\'True\', \'False\'), '),
-            'MODULE_PAYMENT_STRIPE_KLARNA_LOG' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LOG_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LOG_DESC,
-                'value' => 'False',
-                'set_func' => 'tep_cfg_select_option(array(\'True\', \'False\'), '),
-            'MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_METHOD' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_METHOD_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_METHOD_DESC,
-                'value' => 'Authorize',
-                'set_func' => 'tep_cfg_select_option(array(\'Authorize\', \'Capture\'), '),
-            'MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_NEW_ORDER_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_NEW_ORDER_DESC,
-                'value' => $prepare_status_id,
-                'use_func' => 'tep_get_order_status_name',
-                'set_func' => 'tep_cfg_pull_down_order_statuses('),
-            'MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_APP_ORDER_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_APP_ORDER_DESC,
-                'value' => $app_status_id,
-                'use_func' => 'tep_get_order_status_name',
-                'set_func' => 'tep_cfg_pull_down_order_statuses('),
-            'MODULE_PAYMENT_STRIPE_KLARNA_ORDER_STATUS_ID' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_PROCESSED_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_PROCESSED_DESC,
-                'value' => '0',
-                'use_func' => 'tep_get_order_status_name',
-                'set_func' => 'tep_cfg_pull_down_order_statuses('),
-            'MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_FAIL_ORDER_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_FAIL_ORDER_DESC,
-                'value' => $fail_status_id,
-                'use_func' => 'tep_get_order_status_name',
-                'set_func' => 'tep_cfg_pull_down_order_statuses('),
-            'MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TRANSACTION_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TRANSACTION_DESC,
-                'value' => $status_id,
-                'set_func' => 'tep_cfg_pull_down_order_statuses(',
-                'use_func' => 'tep_get_order_status_name'),
-            'MODULE_PAYMENT_STRIPE_KLARNA_ZONE' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_ZONE_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_ZONE_DESC,
-                'value' => '0',
-                'use_func' => 'tep_get_zone_class_title',
-                'set_func' => 'tep_cfg_pull_down_zone_classes('),
-            'MODULE_PAYMENT_STRIPE_KLARNA_EVENT_NUMBER' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_DESC,
-                'value' => '5',
-                ),
-            'MODULE_PAYMENT_STRIPE_KLARNA_VERIFY_SSL' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SSL_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SSL_DESC,
-                'value' => 'True',
-                'set_func' => 'tep_cfg_select_option(array(\'True\', \'False\'), '),
-            'MODULE_PAYMENT_STRIPE_KLARNA_PROXY' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_PROXY_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_PROXY_DESC),
-            'MODULE_PAYMENT_STRIPE_KLARNA_DEBUG_EMAIL' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EMAIL_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EMAIL_DESC),
-            'MODULE_PAYMENT_STRIPE_KLARNA_SORT_ORDER' => array('title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SORT_TITLE,
-                'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SOR_DESC,
-                'value' => '0'));
+        $status_id = $this->checkOrderStatus(MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_TEXT);
 
-        return $params;
+      } else {
+
+        $status_id = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID;
+      }
+
+      if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID')) {
+
+        $app_status_id = $this->checkOrderStatus(MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_TEXT, 1);
+
+      } else {
+
+        $app_status_id = MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID;
+      }
+
+      if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID')) {
+
+        $fail_status_id = $this->checkOrderStatus(MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_TEXT, 1);
+
+      } else {
+
+        $fail_status_id = MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID;
+      }
+
+      $params = [
+        'MODULE_PAYMENT_STRIPE_KLARNA_STATUS' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_STATUS_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_STATUS_DESC,
+          'value' => 'True',
+          'set_func' => 'tep_cfg_select_option(array(\'True\', \'False\'), '
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SERVER_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SERVER_DESC,
+          'value' => 'Live',
+          'set_func' => 'tep_cfg_select_option(array(\'Live\', \'Test\'), '
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_LIVE_PUBLISHABLE_KEY' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_PUB_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_PUB_DESC,
+          'value' => ''
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_LIVE_SECRET_KEY' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_SECRET_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_SECRET_DESC,
+          'value' => ''
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_LIVE_WEBHOOK_SECRET' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_WEBHOOK_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_WEBHOOK_DESC,
+          'value' => ''
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_TEST_PUBLISHABLE_KEY' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_PUB_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_PUB_DESC,
+          'value' => ''
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_TEST_SECRET_KEY' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_SECRET_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_SECRET_DESC,
+          'value' => ''
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_TEST_WEBHOOK_SECRET' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_WEBHOOK_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TEST_WEBHOOK_DESC,
+          'value' => ''
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_LOG' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LOG_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LOG_DESC,
+          'value' => 'True',
+          'set_func' => 'tep_cfg_select_option(array(\'True\', \'False\'), '
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_NEW_ORDER_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_NEW_ORDER_DESC,
+          'value' => $prepare_status_id,
+          'use_func' => 'tep_get_order_status_name',
+          'set_func' => 'tep_cfg_pull_down_order_statuses('
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_APP_ORDER_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_APP_ORDER_DESC,
+          'value' => $app_status_id,
+          'use_func' => 'tep_get_order_status_name',
+          'set_func' => 'tep_cfg_pull_down_order_statuses('
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_ORDER_STATUS_ID' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_PROCESSED_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_PROCESSED_DESC,
+          'value' => '0',
+          'use_func' => 'tep_get_order_status_name',
+          'set_func' => 'tep_cfg_pull_down_order_statuses('
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_FAIL_ORDER_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_FAIL_ORDER_DESC,
+          'value' => $fail_status_id,
+          'use_func' => 'tep_get_order_status_name',
+          'set_func' => 'tep_cfg_pull_down_order_statuses('
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TRANSACTION_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TRANSACTION_DESC,
+          'value' => $status_id,
+          'set_func' => 'tep_cfg_pull_down_order_statuses(',
+          'use_func' => 'tep_get_order_status_name'
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_ZONE' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_ZONE_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_ZONE_DESC,
+          'value' => '0',
+          'use_func' => 'tep_get_zone_class_title',
+          'set_func' => 'tep_cfg_pull_down_zone_classes('
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_EVENT_NUMBER' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_DESC,
+          'value' => '5',
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_PROXY' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_PROXY_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_PROXY_DESC
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_DEBUG_EMAIL' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EMAIL_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EMAIL_DESC
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_SORT_ORDER' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SORT_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SORT_DESC,
+          'value' => '0'
+        ]
+      ];
+
+      return $params;
     }
 
     function sendTransactionToGateway($url, $parameters = null, $curl_opts = array()) {
@@ -1172,18 +1212,7 @@ EOD;
             curl_setopt($curl, CURLOPT_POSTFIELDS, $parameters);
         }
 
-        if (MODULE_PAYMENT_STRIPE_KLARNA_VERIFY_SSL == 'True') {
-            curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
-            curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
-
-            if (file_exists(DIR_FS_CATALOG . 'ext/modules/payment/stripe/data/ca-certificates.crt')) {
-                curl_setopt($curl, CURLOPT_CAINFO, DIR_FS_CATALOG . 'ext/modules/payment/stripe/data/ca-certificates.crt');
-            } elseif (file_exists(DIR_FS_CATALOG . 'includes/cacert.pem')) {
-                curl_setopt($curl, CURLOPT_CAINFO, DIR_FS_CATALOG . 'includes/cacert.pem');
-            }
-        } else {
-            curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
-        }
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
 
         if (tep_not_null(MODULE_PAYMENT_STRIPE_KLARNA_PROXY)) {
             curl_setopt($curl, CURLOPT_HTTPPROXYTUNNEL, true);
@@ -1289,187 +1318,6 @@ EOD;
         return class_exists('oscTemplate') && isset($GLOBALS['oscTemplate']) && is_object($GLOBALS['oscTemplate']) && (get_class($GLOBALS['oscTemplate']) == 'oscTemplate');
     }
 
-    function getSubmitCardDetailsJavascript($intent = null) {
-        $stripe_publishable_key = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Live' ? MODULE_PAYMENT_STRIPE_KLARNA_LIVE_PUBLISHABLE_KEY : MODULE_PAYMENT_STRIPE_KLARNA_TEST_PUBLISHABLE_KEY;
-        $intent_url = tep_href_link("ext/modules/payment/stripe_sca/payment_intent.php", '', 'SSL', false, false);
-        $js = <<<EOD
-<style>
-#stripe_table_new_card #card-element {
-  background-color: #fff;
-  padding: 6px 12px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-</style>
-<script src="https://js.stripe.com/v3/"></script>
-<script>
-$(function() {
-    $('[name=checkout_confirmation]').attr('id','payment-form');
-
-    var stripe = Stripe('{$stripe_publishable_key}');
-    var elements = stripe.elements();
-
-    // Create an instance of the card Element.
-    var card = elements.create('card', {hidePostalCode: true});
-    
-    // Add an instance of the card Element into the `card-element` <div>.
-    card.mount('#card-element');
-
-    $('#payment-form').submit(function(event) {
-        var \$form = $(this);
-
-        // Disable the submit button to prevent repeated clicks
-        \$form.find('button').prop('disabled', true);
-
-        var selected =  $("input[name='stripe_card']:checked"). val();
-        var cc_save = $('[name=card-save]').prop('checked');
-        try {
-            if ((selected != null && selected != '0') || cc_save) {
-                // update intent to use saved card, then process payment if successful
-                updatePaymentIntent(cc_save,selected);
-            } else {
-                // using new card details without save
-                processNewCardPayment();
-            }
-        } catch ( error ) {
-            \$form.find('.payment-errors').text(error);
-        }
-
-        // Prevent the form from submitting with the default action
-        return false;
-    });
-
-    if ( $('#stripe_table').length > 0 ) {
-        if ( typeof($('#stripe_table').parent().closest('table').attr('width')) == 'undefined' ) {
-          $('#stripe_table').parent().closest('table').attr('width', '100%');
-        }
-
-        $('#stripe_table .moduleRowExtra').hide();
-
-        $('#stripe_table_new_card').hide();
-        $('#card-element').prop('id','new-card-element');
-        $('#save-card-element').prop('id','card-element');
-
-        $('form[name="checkout_confirmation"] input[name="stripe_card"]').change(function() {
-
-            if ( $(this).val() == '0' ) {
-                stripeShowNewCardFields();
-            } else {
-                if ($('#stripe_table_new_card').is(':visible')) {
-                    $('#card-element').prop('id','new-card-element');
-                    $('#save-card-element').prop('id','card-element');
-                }
-                $('#stripe_table_new_card').hide();
-
-            }
-            $('tr[id^="stripe_card_"]').removeClass('moduleRowSelected');
-            $('#stripe_card_' + $(this).val()).addClass('moduleRowSelected');
-            });
-
-        $('form[name="checkout_confirmation"] input[name="stripe_card"]:first').prop('checked', true).trigger('change');
-
-        $('#stripe_table .moduleRow').hover(function() {
-            $(this).addClass('moduleRowOver');
-        }, function() {
-            $(this).removeClass('moduleRowOver');
-        }).click(function(event) {
-            var target = $(event.target);
-
-            if ( !target.is('input:radio') ) {
-                $(this).find('input:radio').each(function() {
-                    if ( $(this).prop('checked') == false ) {
-                        $(this).prop('checked', true).trigger('change');
-                    }
-                });
-            }
-            });
-    } else {
-        if ( typeof($('#stripe_table_new_card').parent().closest('table').attr('width')) == 'undefined' ) {
-            $('#stripe_table_new_card').parent().closest('table').attr('width', '100%');
-        }
-    }
-    function stripeShowNewCardFields() {
-
-        $('#card-element').attr('id','save-card-element');
-        $('#new-card-element').attr('id','card-element');
-
-        $('#stripe_table_new_card').show();
-    }
-    function updatePaymentIntent(cc_save,token){
-        // add card save option to payment intent, so card can be saved in webhook
-        // or customer/payment method if using saved card
-        $.getJSON( "{$intent_url}",{"id":$('#intent_id').val(),
-                                    "token":token, 
-                                    "customer_id": $('#customer_id').val(), 
-                                    "cc_save": cc_save},
-        function( data ) {
-            if (data.status == 'ok') {
-                var selected = $("input[name='stripe_card']:checked"). val();
-
-                if (selected == null || selected == '0') {
-                    processNewCardPayment();
-                } else {
-                    processSavedCardPayment(data.payment_method);
-                }
-            } else {
-                var \$form = $('#payment-form');
-                \$form.find('button').prop('disabled', false);
-                $('#card-errors').text(data.error);    
-            }
-        });
-    }
-    function processNewCardPayment() {
-        stripe.handleCardPayment(
-            $('#secret').val(), card, {
-              payment_method_data: {
-                billing_details: {
-                    name: $('#cardholder-name').val(),
-                    address: {
-                        city: $('#address_city').val(),
-                        line1: $('#address_line1').val(),
-                        postal_code: $('#address_zip').val(),
-                        state: $('#address_state').val(),
-                        country: $('#address_country').val()
-                    },
-                    email: $('#email_address').val()
-                }
-              }
-            }
-        ).then(function(result) { 
-            stripeResponseHandler(result);
-        });
-    }
-    function processSavedCardPayment(payment_method_id) {
-        stripe.handleCardPayment(
-            $('#secret').val(), 
-            {
-              payment_method: payment_method_id
-            }
-        ).then(function(result) { 
-            stripeResponseHandler(result);
-        });
-    }
-    function stripeResponseHandler(result) {
-        var \$form = $('#payment-form');
-        if (result.error) {
-            $('#card-errors').text(result.error.message);
-            \$form.find('button').prop('disabled', false);
-        } else {
-            $('#card-errors').text('Processing');
-
-            // Insert the token into the form so it gets submitted to the server
-            \$form.append($('<input type="hidden" name="stripeIntentId" />').val(result.paymentIntent.id));
-            // and submit
-            \$form.get(0).submit();
-        }
-    }
-});
-</script>
-EOD;
-
-        return $js;
-    }
-
     function sendDebugEmail($response = array()) {
         if (tep_not_null(MODULE_PAYMENT_STRIPE_KLARNA_DEBUG_EMAIL)) {
             $email_body = '';
@@ -1490,32 +1338,6 @@ EOD;
                 tep_mail('', MODULE_PAYMENT_STRIPE_KLARNA_DEBUG_EMAIL, 'Stripe Debug E-Mail', trim($email_body), STORE_OWNER, STORE_OWNER_EMAIL_ADDRESS);
             }
         }
-    }
-
-    function deleteCard($card, $customer, $token_id) {
-        global $customer_id;
-
-        $secret_key = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Live' ? MODULE_PAYMENT_STRIPE_KLARNA_LIVE_SECRET_KEY : MODULE_PAYMENT_STRIPE_KLARNA_TEST_SECRET_KEY;
-        \Stripe\Stripe::setApiKey($secret_key);
-        \Stripe\Stripe::setApiVersion($this->apiVersion);
-        $error = '';
-        $payment_method = \Stripe\PaymentMethod::retrieve($card);
-        try {
-            $result = $payment_method->detach();
-        } catch (exception $err) {
-            // just log error, and continue to delete card from table
-            $error = $err->getMessage();
-        }
-
-        $this->event_log($customer_id, "deleteCard", $payment_method, $error);
-
-        if (!is_object($result) || !isset($result['object']) || ($result['object'] != 'payment_method')) {
-            $this->sendDebugEmail($result . PHP_EOL . $error);
-        }
-
-        tep_db_query("delete from customers_stripe_tokens where id = '" . (int) $token_id . "' and customers_id = '" . (int) $customer_id . "' and stripe_token = '" . tep_db_input(tep_db_prepare_input($customer . ':|:' . $card)) . "'");
-
-        return (tep_db_affected_rows() === 1);
     }
 
 }
