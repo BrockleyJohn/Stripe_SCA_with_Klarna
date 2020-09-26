@@ -11,7 +11,7 @@
   Released under the GNU General Public License
  */
 
-require_once DIR_FS_CATALOG . 'includes/modules/payment/stripe_sca/init.php';
+require_once dirname(__FILE__) . '/stripe_sca/init.php';
 
 class stripe_sca {
 
