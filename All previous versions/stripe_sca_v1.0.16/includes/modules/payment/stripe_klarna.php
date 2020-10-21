@@ -432,10 +432,12 @@ EOS;
         $cats = explode(',', $this->source->klarna->payment_method_categories);
         $count = count($cats);
         if ($count) {
-          $cols = (12 / $count);
           foreach ($cats as $cat) {
             // frozen version:
-            $karna_divs .= '<div class="col-sm-' . $cols . '"><div class="klarna-option"><div class="klarna-option-hdr">';
+            if ($count > 2) { $class = 'col-sm-6 col-lg-4'; }
+            elseif ($count == 2) { $class = 'col-sm-6'; }
+            else { $class = 'col-12'; }
+            $karna_divs .= '<div class="' . $class . '"><div class="klarna-option"><div class="klarna-option-hdr">';
             if (array_key_exists($cat, $k_opts)) {
               $karna_divs .= ($count > 1 ? tep_draw_radio_field('klarna_option', $cat, false, 'id="klarna_' . $cat . '_option" required="required"') : tep_draw_hidden_field('klarna_option', $cat, 'id="klarna_' . $cat . '_option"')) . ' ' . $k_opts[$cat];
             }

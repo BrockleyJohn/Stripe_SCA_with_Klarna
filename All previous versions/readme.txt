@@ -15,10 +15,9 @@ This means you don't always know straightaway whether a charge submitted to Klar
 - the initial Klarna application is conducted via the widget on checkout_confirmation
 - if the application is successful and the client confirms, a charge request is sent in checkout_process and the order is changed to an 'Application' status
 - when the result of this arrives, the order will either move on to a successful or failed status
-- if this has happened by the time the customer reaches checkout_success they are informed and if a failure they are returned to checkout
+- if this has happened by the time the customer reaches checkout_success they are informed and if a failure they are returned to checkout with a full cart
 - they are notified by email too
 - the application and fail status have the public flag set so that the customer can see in their account orders list what is happening
-- note that if you choose not to log events in the module settings, you and the customer won't have any information on the cause that a klarna charge failed
 
 IF YOU WANT TO CREATE A NEW LANGUAGE TRANSLATION
 Do it before you install the module. The names and descriptions of the admin settings and the new status names are all defined in the language file, so if done first you can match them to your admin language.
@@ -34,6 +33,20 @@ Login to the osCommerce Admin page of your store and go to Modules > Payment.
 
 Check that your store has 'hooks' which it will if you have the paypal app. Older stores will use 'global' shop hooks while Phoenix stores use 'siteWide' hooks. Both are provided in the files for this module.
 
+Core File Change
+----------------
+You need to make sure that your checkout_success.php calls injectRedirects hooks. Check near the top of the file and find where the items are added to the breadcrumb and then template_top.php gets included. If you don't have a hooks call near there, you'll need to add it.
+The added hook call needs to match how hooks are loaded in your store. The easiest way to check is to look in includes/classes/hooks.php and check whether the constructor registers 'global' or 'siteWide'.
+Your added call needs to match, so it's going to be
+  $OSCOM_Hooks->call('global', 'injectRedirects');
+or
+  $OSCOM_Hooks->call('siteWide', 'injectRedirects');
+Put it before the language file include.
+
+Testing Checkout Success Hook
+-----------------------------
+After you've configured the module and try a test order, it's not immediately obvious whether the hook you may have just added is working as you will end up on checkout_success either way. Check whether the cart is empty or not, as if the hook executes it will empty the cart.
+
 Configuration
 -------------
 
@@ -41,7 +54,7 @@ The module needs publishable and secret keys copying from your Stripe account. Y
 
 Login to your account at the Stripe web site, and select Developers > Webhooks
 - select '+ Add endpoint' at the upper right of the page
-- set the URL to: https://yourstore.url/ext/modules/payment/stripe_sca/klarnahook.php
+- set the URL to: https://example.com/ext/modules/payment/stripe_sca/klarnahook.php
 - select events: 
     charge.updated
     charge.succeeded

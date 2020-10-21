@@ -67,8 +67,8 @@
 // klarna widget selection
   define('MODULE_PAYMENT_STRIPE_KLARNA_OPTIONS','Payment options with Klarna:');
   define('MODULE_PAYMENT_STRIPE_KLARNA_PAY_NOW','Pay now');
-  define('MODULE_PAYMENT_STRIPE_KLARNA_PAY_LATER','Pay in 30 days');
-  define('MODULE_PAYMENT_STRIPE_KLARNA_PAY_OVER_TIME','3 interest free instalments');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_PAY_LATER','Pay later');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_PAY_OVER_TIME','Pay in instalments');
   
 // error messages and email
   define('MODULE_PAYMENT_STRIPE_KLARNA_WEBHOOK_PARAMETER', 'Unexpected parameter value received');
@@ -84,7 +84,7 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_ERROR_FAIL', 'Failed to process your Klarna Payment. Please try again and if problems persist, please try another payment method. Error %s %s');
   define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_CHARGE_FAIL', 'FAIL: Klarna charge failed %s %s');
   define('MODULE_PAYMENT_STRIPE_KLARNA_MISMATCH_ORDER_CUSTOMER', 'Klarna charge succeeded but order %s customer %s not matched');
-  define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_INCOMPLETE','Setting up your Klarna payment arrangement has not finished yet. Please check your email for confirmation of success - or check the status of the order in your account.');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_INCOMPLETE','Order placed subject to confirmation from Klarna. Check your emails or the order status in your account.');
   define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_SUBJECT', 'Klarna setup failed - order not placed');
   define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_TEXT', "Dear %s,\n\nSorry but there was a problem setting up the Klarna payment arrangement for order %s. Please contact us to make alternative arrangements to pay.");
 

@@ -1,3 +1,3 @@
 //suggested for user.css (adapt to site design)
-.klarna-option {background: #fff; padding:7px}
+.klarna-option {background: #fff; padding:7px; margin-top:15px}
 .klarna-option-hdr {color:#000; font-weight:bold}
