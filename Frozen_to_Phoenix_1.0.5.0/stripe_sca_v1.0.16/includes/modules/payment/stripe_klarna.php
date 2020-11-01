@@ -816,8 +816,8 @@ EOS;
                 $products_ordered .
                 EMAIL_SEPARATOR . "\n";
 
-        for ($i = 0, $n = sizeof($order_totals); $i < $n; $i++) {
-            $email_order .= strip_tags($order_totals[$i]['title']) . ' ' . strip_tags($order_totals[$i]['text']) . "\n";
+        for ($i = 0, $n = sizeof($order->totals); $i < $n; $i++) {
+            $email_order .= strip_tags($order->totals[$i]['title']) . ' ' . strip_tags($order->totals[$i]['text']) . "\n";
         }
 
         if ($order->content_type != 'virtual') {
@@ -857,6 +857,8 @@ EOS;
         $sql_data_array = [
           'orders_id' => $order_id,
           'orders_status_id' => $o_status,
+          'customer_notified' => 1,
+          'comments' => MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED,
           'date_added' => 'now()',
         ];
         tep_db_perform('orders_status_history', $sql_data_array);

@@ -1,6 +1,9 @@
 <?php
 
 /*
+  This version: targets phoenix 10.7.5 which is intermediate
+  - so there are some workarounds (eg. define tep_address_format)
+  
   Klarna via Stripe (payment sources)
   
   author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
@@ -10,184 +13,179 @@
   Released under MIT License without warranty express or implied
  */
 
-require_once dirname(__FILE__) . '/stripe_sca/init.php';
+require_once dirname(dirname(dirname(__FILE__))) . '/apps/stripe_sca/init.php';
 
-class stripe_klarna {
+class stripe_klarna extends abstract_payment_module {
 
-    var $code, $title, $description, $enabled, $intent;
+  const CONFIG_KEY_BASE = 'MODULE_PAYMENT_STRIPE_KLARNA_';
 
-    function __construct() {
-        global $PHP_SELF, $order, $payment;
+  const REQUIRES = [
+    'firstname',
+    'lastname',
+    'street_address',
+    'city',
+    'postcode',
+    'country',
+    'telephone',
+    'email_address',
+  ];
 
-        $this->signature = 'stripe|stripe_klarna|1.0.16|2.3';
-        $this->api_version = '7.51.0';
+  var $intent;
 
-        $this->code = get_class($this);
-        $this->title = MODULE_PAYMENT_STRIPE_KLARNA_TEXT_TITLE;
-        $this->public_title = MODULE_PAYMENT_STRIPE_KLARNA_TEXT_PUBLIC_TITLE;
-        $this->description = MODULE_PAYMENT_STRIPE_KLARNA_TEXT_DESCRIPTION;
-        $this->sort_order = defined('MODULE_PAYMENT_STRIPE_KLARNA_SORT_ORDER') ? MODULE_PAYMENT_STRIPE_KLARNA_SORT_ORDER : 0;
-        $this->enabled = defined('MODULE_PAYMENT_STRIPE_KLARNA_STATUS') && (MODULE_PAYMENT_STRIPE_KLARNA_STATUS == 'True') ? true : false;
-        $this->order_status = defined('MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID') && ((int) MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID > 0) ? (int) MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID : 0;
+  function __construct() {
+    global $PHP_SELF, $order, $payment;
 
-        if (defined('MODULE_PAYMENT_STRIPE_KLARNA_STATUS')) {
-            if (MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Test') {
-                $this->title .= ' [Test]';
-                $this->public_title .= ' (Test)';
-            }
+    $this->signature = 'stripe|stripe_klarna|1.0.16|1.0.7.5';
+    $this->api_version = '7.51.0';
 
-            $this->description .= $this->getTestLinkInfo();
-        }
+    parent::__construct();
+    $this->public_title = MODULE_PAYMENT_STRIPE_KLARNA_TEXT_PUBLIC_TITLE;
+    $this->sort_order = $this->sort_order ?? 0;
+    $this->order_status = ((int)self::get_constant('MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID') > 0) ? (int)MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID : 0;
 
-        if (!function_exists('curl_init')) {
-            $this->description = '<div class="secWarning">' . MODULE_PAYMENT_STRIPE_KLARNA_ERROR_ADMIN_CURL . '</div>' . $this->description;
+    if (defined('MODULE_PAYMENT_STRIPE_KLARNA_STATUS')) {
+      if (MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Test') {
+        $this->title .= ' [Test]';
+        $this->public_title .= ' (Test)';
+      }
 
-            $this->enabled = false;
-        }
-
-        if ($this->enabled === true) {
-            if ((MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Live' && (!tep_not_null(MODULE_PAYMENT_STRIPE_KLARNA_LIVE_PUBLISHABLE_KEY) || !tep_not_null(MODULE_PAYMENT_STRIPE_KLARNA_LIVE_SECRET_KEY))) || (MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Test' && (!tep_not_null(MODULE_PAYMENT_STRIPE_KLARNA_TEST_PUBLISHABLE_KEY) || !tep_not_null(MODULE_PAYMENT_STRIPE_KLARNA_TEST_SECRET_KEY)))) {
-                $this->description = '<div class="secWarning">' . MODULE_PAYMENT_STRIPE_KLARNA_ERROR_ADMIN_CONFIGURATION . '</div>' . $this->description;
-
-                $this->enabled = false;
-            } else {
-              $this->publishable_key = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Live' ? MODULE_PAYMENT_STRIPE_KLARNA_LIVE_PUBLISHABLE_KEY : MODULE_PAYMENT_STRIPE_KLARNA_TEST_PUBLISHABLE_KEY;
-              $this->secret_key = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Live' ? MODULE_PAYMENT_STRIPE_KLARNA_LIVE_SECRET_KEY : MODULE_PAYMENT_STRIPE_KLARNA_TEST_SECRET_KEY;
-              $this->webhook_secret = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Live' ? MODULE_PAYMENT_STRIPE_KLARNA_LIVE_WEBHOOK_SECRET : MODULE_PAYMENT_STRIPE_KLARNA_TEST_WEBHOOK_SECRET;
-            }
-        }
-
-        if ($this->enabled === true) {
-            if (isset($order) && is_object($order)) {
-                $this->update_status();
-            }
-        }
-
-        if ((basename($PHP_SELF) == 'modules.php') && isset($_GET['action']) && ($_GET['action'] == 'install') && isset($_GET['subaction']) && ($_GET['subaction'] == 'conntest')) {
-            echo $this->getTestConnectionResult();
-            exit;
-        }
+      $this->description .= $this->getTestLinkInfo();
     }
 
-    function update_status() {
-        global $order;
+    if (!function_exists('curl_init')) {
+      $this->description = '<div class="secWarning">' . MODULE_PAYMENT_STRIPE_KLARNA_ERROR_ADMIN_CURL . '</div>' . $this->description;
 
-        if (($this->enabled == true) && ((int) MODULE_PAYMENT_STRIPE_KLARNA_ZONE > 0)) {
-            $check_flag = false;
-            $check_query = tep_db_query("select zone_id from zones_to_geo_zones where geo_zone_id = '" . MODULE_PAYMENT_STRIPE_KLARNA_ZONE . "' and zone_country_id = '" . $order->delivery['country']['id'] . "' order by zone_id");
-            while ($check = tep_db_fetch_array($check_query)) {
-                if ($check['zone_id'] < 1) {
-                    $check_flag = true;
-                    break;
-                } elseif ($check['zone_id'] == $order->delivery['zone_id']) {
-                    $check_flag = true;
-                    break;
-                }
-            }
+      $this->enabled = false;
+    }
 
-            if ($check_flag == false) {
-                $this->enabled = false;
-            }
+    if ($this->enabled === true) {
+      if ((MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Live' && (!tep_not_null(MODULE_PAYMENT_STRIPE_KLARNA_LIVE_PUBLISHABLE_KEY) || !tep_not_null(MODULE_PAYMENT_STRIPE_KLARNA_LIVE_SECRET_KEY))) || (MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Test' && (!tep_not_null(MODULE_PAYMENT_STRIPE_KLARNA_TEST_PUBLISHABLE_KEY) || !tep_not_null(MODULE_PAYMENT_STRIPE_KLARNA_TEST_SECRET_KEY)))) {
+        $this->description = '<div class="secWarning">' . MODULE_PAYMENT_STRIPE_KLARNA_ERROR_ADMIN_CONFIGURATION . '</div>' . $this->description;
+
+        $this->enabled = false;
+      } else {
+        $this->publishable_key = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Live' ? MODULE_PAYMENT_STRIPE_KLARNA_LIVE_PUBLISHABLE_KEY : MODULE_PAYMENT_STRIPE_KLARNA_TEST_PUBLISHABLE_KEY;
+        $this->secret_key = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Live' ? MODULE_PAYMENT_STRIPE_KLARNA_LIVE_SECRET_KEY : MODULE_PAYMENT_STRIPE_KLARNA_TEST_SECRET_KEY;
+        $this->webhook_secret = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER == 'Live' ? MODULE_PAYMENT_STRIPE_KLARNA_LIVE_WEBHOOK_SECRET : MODULE_PAYMENT_STRIPE_KLARNA_TEST_WEBHOOK_SECRET;
+      }
+    }
+
+    if ($this->enabled === true) {
+      if (isset($order) && is_object($order)) {
+        $this->update_status();
+      }
+    }
+
+    if ((basename($PHP_SELF) == 'modules.php') && isset($_GET['action']) && ($_GET['action'] == 'install') && isset($_GET['subaction']) && ($_GET['subaction'] == 'conntest')) {
+      echo $this->getTestConnectionResult();
+      exit;
+    }
+  }
+
+  function selection() {
+    if (isset($_SESSION['cart_Stripe_Klarna_ID'])) {
+      $order_id = $this->extract_order_id();
+
+      $check_query = tep_db_query('SELECT orders_id FROM orders_status_history WHERE orders_id = ' . (int)$order_id . ' LIMIT 1');
+
+      if (tep_db_num_rows($check_query) < 1) {
+        tep_delete_order($order_id);
+
+        unset($_SESSION['cart_Stripe_Klarna_ID']);
+      }
+    }
+
+    return [
+      'id' => $this->code,
+      'module' => $this->public_title
+    ];
+  }
+
+  function confirmation() {
+    global $order, $customer_id, $languages_id, $currencies, $currency, $stripe_source_id, $order_total_modules, $shipping, $insert_id, $klarna_error;
+
+    if (isset($_SESSION['cartID'])) {
+      $insert_order = false;
+
+      if (isset($_SESSION['cart_Stripe_Klarna_ID'])) {
+        $order_id = $this->extract_order_id();
+
+        $curr_check = tep_db_query("select currency from orders where orders_id = '" . (int)$order_id . "'");
+        $curr = tep_db_fetch_array($curr_check);
+
+        if ($curr['currency'] != $GLOBALS['order']->info['currency'] || $_SESSION['cartID'] != $this->extract_cart_id()) {
+
+          // can't update amount for klarna so force recreate
+          if (isset($_SESSION['stripe_source_id'])) unset($_SESSION['stripe_source_id']);
+
+          $check_query = tep_db_query('select orders_id from orders_status_history where orders_id = "' . (int)$order_id . '" limit 1');
+
+          if (tep_db_num_rows($check_query) < 2) {
+            tep_db_query('delete from orders where orders_id = "' . (int)$order_id . '"');
+            tep_db_query('delete from orders_total where orders_id = "' . (int)$order_id . '"');
+            tep_db_query('delete from orders_status_history where orders_id = "' . (int)$order_id . '"');
+            tep_db_query('delete from orders_products where orders_id = "' . (int)$order_id . '"');
+            tep_db_query('delete from orders_products_attributes where orders_id = "' . (int)$order_id . '"');
+            tep_db_query('delete from orders_products_download where orders_id = "' . (int)$order_id . '"');
+          }
+
+          $insert_order = true;
         }
-    }
+      } else {
+        $insert_order = true;
+      }
 
-    function javascript_validation() {
-        return false;
-    }
+      if ($insert_order == true) {
 
-    function selection() {
-        return array('id' => $this->code,
-            'module' => $this->public_title);
-    }
+        if (isset($GLOBALS['order']->info['payment_method_raw'])) {
+          $GLOBALS['order']->info['payment_method'] = $GLOBALS['order']->info['payment_method_raw'];
+          unset($GLOBALS['order']->info['payment_method_raw']);
+        }
+        
+        // keep the insert and leave as global vars until system/checkout bits in
 
-    function pre_confirmation_check() {
-        return false;
-    }
-
-    function confirmation() {
-        global $oscTemplate, $cartID, $cart_Stripe_Klarna_ID, $customer_id, $languages_id, $order, $currencies, $currency, $stripe_source_id, $order_total_modules, $shipping, $insert_id, $klarna_error;
-
-        if (tep_session_is_registered('cartID')) {
-            $insert_order = false;
-
-            if (tep_session_is_registered('cart_Stripe_Klarna_ID')) {
-                $order_id = substr($cart_Stripe_Klarna_ID, strpos($cart_Stripe_Klarna_ID, '-') + 1);
-
-                $curr_check = tep_db_query("select currency from orders where orders_id = '" . (int) $order_id . "'");
-                $curr = tep_db_fetch_array($curr_check);
-
-                if (($curr['currency'] != $order->info['currency']) || ($cartID != substr($cart_Stripe_Klarna_ID, 0, strpos($cart_Stripe_Klarna_ID, '-')))) {
-                  
-                  // can't update amount for klarna so force recreate
-                  if (isset($stripe_source_id)) unset($stripe_source_id);
-                  if (tep_session_is_registered('stripe_source_id')) {
-                      tep_session_unregister('stripe_source_id');
-                  }
-
-                    $check_query = tep_db_query('select orders_id from orders_status_history where orders_id = "' . (int) $order_id . '" limit 1');
-
-                    if (tep_db_num_rows($check_query) < 2) {
-                        tep_db_query('delete from orders where orders_id = "' . (int) $order_id . '"');
-                        tep_db_query('delete from orders_total where orders_id = "' . (int) $order_id . '"');
-                        tep_db_query('delete from orders_status_history where orders_id = "' . (int) $order_id . '"');
-                        tep_db_query('delete from orders_products where orders_id = "' . (int) $order_id . '"');
-                        tep_db_query('delete from orders_products_attributes where orders_id = "' . (int) $order_id . '"');
-                        tep_db_query('delete from orders_products_download where orders_id = "' . (int) $order_id . '"');
-                    }
-
-                    $insert_order = true;
-                }
-            } else {
-                $insert_order = true;
-            }
-
-            if ($insert_order == true) {
-
-                if (isset($order->info['payment_method_raw'])) {
-                    $order->info['payment_method'] = $order->info['payment_method_raw'];
-                    unset($order->info['payment_method_raw']);
-                }
-
-                $sql_data_array = array('customers_id' => $customer_id,
-                    'customers_name' => $order->customer['firstname'] . ' ' . $order->customer['lastname'],
-                    'customers_company' => $order->customer['company'],
-                    'customers_street_address' => $order->customer['street_address'],
-                    'customers_suburb' => $order->customer['suburb'],
-                    'customers_city' => $order->customer['city'],
-                    'customers_postcode' => $order->customer['postcode'],
-                    'customers_state' => $order->customer['state'],
-                    'customers_country' => $order->customer['country']['title'],
-                    'customers_telephone' => $order->customer['telephone'],
-                    'customers_email_address' => $order->customer['email_address'],
-                    'customers_address_format_id' => $order->customer['format_id'],
-                    'delivery_name' => $order->delivery['firstname'] . ' ' . $order->delivery['lastname'],
-                    'delivery_company' => $order->delivery['company'],
-                    'delivery_street_address' => $order->delivery['street_address'],
-                    'delivery_suburb' => $order->delivery['suburb'],
-                    'delivery_city' => $order->delivery['city'],
-                    'delivery_postcode' => $order->delivery['postcode'],
-                    'delivery_state' => $order->delivery['state'],
-                    'delivery_country' => $order->delivery['country']['title'],
-                    'delivery_address_format_id' => $order->delivery['format_id'],
-                    'billing_name' => $order->billing['firstname'] . ' ' . $order->billing['lastname'],
-                    'billing_company' => $order->billing['company'],
-                    'billing_street_address' => $order->billing['street_address'],
-                    'billing_suburb' => $order->billing['suburb'],
-                    'billing_city' => $order->billing['city'],
-                    'billing_postcode' => $order->billing['postcode'],
-                    'billing_state' => $order->billing['state'],
-                    'billing_country' => $order->billing['country']['title'],
-                    'billing_address_format_id' => $order->billing['format_id'],
-                    'payment_method' => $order->info['payment_method'],
-                    'cc_type' => $order->info['cc_type'],
-                    'cc_owner' => $order->info['cc_owner'],
-                    'cc_number' => $order->info['cc_number'],
-                    'cc_expires' => $order->info['cc_expires'],
-                    'date_purchased' => 'now()',
-                    'last_modified' => 'now()',
-                    'orders_status' => $order->info['order_status'],
-                    'currency' => $order->info['currency'],
-                    'currency_value' => $order->info['currency_value']);
+        $sql_data_array = [
+          'customers_id' => $customer_id,
+          'customers_name' => $order->customer['firstname'] . ' ' . $order->customer['lastname'],
+          'customers_company' => $order->customer['company'] ?? '',
+          'customers_street_address' => $order->customer['street_address'],
+          'customers_suburb' => $order->customer['suburb'] ?? '',
+          'customers_city' => $order->customer['city'],
+          'customers_postcode' => $order->customer['postcode'],
+          'customers_state' => $order->customer['state'],
+          'customers_country' => $order->customer['country']['title'],
+          'customers_telephone' => $order->customer['telephone'],
+          'customers_email_address' => $order->customer['email_address'],
+          'customers_address_format_id' => $order->customer['format_id'],
+          'delivery_name' => $order->delivery['firstname'] . ' ' . $order->delivery['lastname'],
+          'delivery_company' => $order->delivery['company'] ?? '',
+          'delivery_street_address' => $order->delivery['street_address'],
+          'delivery_suburb' => $order->delivery['suburb'] ?? '',
+          'delivery_city' => $order->delivery['city'],
+          'delivery_postcode' => $order->delivery['postcode'],
+          'delivery_state' => $order->delivery['state'],
+          'delivery_country' => $order->delivery['country']['title'],
+          'delivery_address_format_id' => $order->delivery['format_id'],
+          'billing_name' => $order->billing['firstname'] . ' ' . $order->billing['lastname'],
+          'billing_company' => $order->billing['company'] ?? '',
+          'billing_street_address' => $order->billing['street_address'],
+          'billing_suburb' => $order->billing['suburb'] ?? '',
+          'billing_city' => $order->billing['city'],
+          'billing_postcode' => $order->billing['postcode'],
+          'billing_state' => $order->billing['state'],
+          'billing_country' => $order->billing['country']['title'],
+          'billing_address_format_id' => $order->billing['format_id'],
+          'payment_method' => $order->info['payment_method'],
+          'cc_type' => $order->info['cc_type'] ?? '',
+          'cc_owner' => $order->info['cc_owner'] ?? '',
+          'cc_number' => $order->info['cc_number'] ?? '',
+          'cc_expires' => $order->info['cc_expires'] ?? '',
+          'date_purchased' => 'now()',
+          'last_modified' => 'now()',
+          'orders_status' => $order->info['order_status'],
+          'currency' => $order->info['currency'],
+          'currency_value' => $order->info['currency_value']
+        ];
 
                 tep_db_perform("orders", $sql_data_array);
 
@@ -277,19 +275,17 @@ class stripe_klarna {
                     }
                 }
 
-                $cart_Stripe_Klarna_ID = $cartID . '-' . $insert_id;
-                tep_session_register('cart_Stripe_Klarna_ID');
-
                 $order_id = $insert_id;
-            }
+
+        $_SESSION['cart_Stripe_Klarna_ID'] = $_SESSION['cartID'] . '-' . $order_id;
       }
 
       $stripe = new \Stripe\StripeClient($this->secret_key);
 
       $metadata = [
-        "customer_id" => tep_output_string($customer_id),
+        "customer_id" => tep_output_string($_SESSION['customer_id']),
         "order_id" => tep_output_string($order_id),
-        "company" => tep_output_string($order->customer['company'])
+        "company" => tep_output_string($GLOBALS['order']->customer['company'] ?? '')
       ];
 
       $content = '<h4>' . MODULE_PAYMENT_STRIPE_KLARNA_OPTIONS . '</h4>' . PHP_EOL;
@@ -297,173 +293,167 @@ class stripe_klarna {
       // set up source parameters once - start with those that can be updated
       $params = [
         'owner' => [
-          'email' => $order->customer['email_address'],
+          'email' => $GLOBALS['order']->customer['email_address'],
           'address' => [
-            'line1' => $order->customer['street_address'],
-            'line2' => $order->customer['suburb'],
-            'city' => $order->customer['city'],
-            'state' => $order->customer['state'],
-            'postal_code' => $order->customer['postcode'],
-            'country' => $order->customer['country']['iso_code_2'],
+            'line1' => $GLOBALS['order']->customer['street_address'],
+            'line2' => $GLOBALS['order']->customer['suburb'] ?? '',
+            'city' => $GLOBALS['order']->customer['city'],
+            'state' => $GLOBALS['order']->customer['state'],
+            'postal_code' => $GLOBALS['order']->customer['postcode'],
+            'country' => $GLOBALS['order']->customer['country']['iso_code_2'],
           ],
         ],
         'klarna' => [
-          'first_name' => $order->customer['firstname'],
-          'last_name' => $order->customer['lastname'],
-          'shipping_first_name' => $order->delivery['firstname'],
-          'shipping_last_name' => $order->delivery['lastname'],
+          'first_name' => $GLOBALS['order']->customer['firstname'],
+          'last_name' => $GLOBALS['order']->customer['lastname'],
+          'shipping_first_name' => $GLOBALS['order']->delivery['firstname'],
+          'shipping_last_name' => $GLOBALS['order']->delivery['lastname'],
         ],
         'source_order' => [
           'shipping' => [
             'address' => [
-              'line1' => $order->delivery['street_address'],
-              'line2' => $order->delivery['suburb'],
-              'city' => $order->delivery['city'],
-              'state' => $order->delivery['state'],
-              'postal_code' => $order->delivery['postcode'],
-              'country' => $order->delivery['country']['iso_code_2'],
+              'line1' => $GLOBALS['order']->delivery['street_address'],
+              'line2' => $GLOBALS['order']->delivery['suburb'] ?? '',
+              'city' => $GLOBALS['order']->delivery['city'],
+              'state' => $GLOBALS['order']->delivery['state'],
+              'postal_code' => $GLOBALS['order']->delivery['postcode'],
+              'country' => $GLOBALS['order']->delivery['country']['iso_code_2'],
             ],
-            'phone' => $order->customer['telephone'],
+            'phone' => $GLOBALS['order']->customer['telephone'],
           ]
         ],
         'metadata' => $metadata
       ];
-      
+
       $source_items = [];
 
-      for ($i = 0, $n = sizeof($order->products); $i < $n; $i++) {
-                  
-        $source_items[] = [
-          'type' => 'sku',
-          'currency' => $currency,
-//          'amount' => $this->format_raw($order->products[$i]['final_price']),
-          'amount' => $this->format_raw($order->products[$i]['final_price'] * $order->products[$i]['qty']),
-          'description' => $order->products[$i]['name'],
-          'quantity' => $order->products[$i]['qty'],
-        ];
-      }
-      if (is_array($order_total_modules->modules)) {
-        foreach ($order_total_modules->modules as $value) {
-          $class = substr($value, 0, strrpos($value, '.'));
-          if ($GLOBALS[$class]->enabled) {
-            $size = sizeof($GLOBALS[$class]->output);
-            for ($i = 0; $i < $size; $i++) {
-              if ($GLOBALS[$class]->code == 'ot_tax' || $GLOBALS[$class]->code == 'ot_shipping') {
-                $source_items[] = [
-                  'type' => substr($GLOBALS[$class]->code, 3),
-                  'currency' => $currency,
-                  'amount' => $this->format_raw($GLOBALS[$class]->output[$i]['value']),
-                  'description' => $GLOBALS[$class]->output[$i]['title']
-                ];
-              }
+    for ($i = 0, $n = sizeof($GLOBALS['order']->products); $i < $n; $i++) {
+
+      $source_items[] = [
+        'type' => 'sku',
+        'currency' => $_SESSION['currency'],
+        'amount' => $this->format_raw($GLOBALS['order']->products[$i]['final_price'] * $GLOBALS['order']->products[$i]['qty']),
+        'description' => $GLOBALS['order']->products[$i]['name'],
+        'quantity' => $GLOBALS['order']->products[$i]['qty'],
+      ];
+    }
+    if (is_array($GLOBALS['order_total_modules']->modules)) {
+      foreach ($GLOBALS['order_total_modules']->modules as $value) {
+        $class = substr($value, 0, strrpos($value, '.'));
+        if ($GLOBALS[$class]->enabled) {
+          $size = sizeof($GLOBALS[$class]->output);
+          for ($i = 0; $i < $size; $i++) {
+            if ($GLOBALS[$class]->code == 'ot_tax' || $GLOBALS[$class]->code == 'ot_shipping') {
+              $source_items[] = [
+                'type' => substr($GLOBALS[$class]->code, 3),
+                'currency' => $currency,
+                'amount' => $this->format_raw($GLOBALS[$class]->output[$i]['value']),
+                'description' => $GLOBALS[$class]->output[$i]['title']
+              ];
             }
           }
         }
       }
+    }
 
-
-      // have to create source before loading the javascript because it needs the source id - or make sure it's up to date if we already have one
-      if (isset($stripe_source_id)) {
-        try {
-          $this->source = $stripe->sources->update($stripe_source_id, $params);
-          $this->event_log($customer_id, "page update source", $stripe_source_id, $this->source);
-        } catch (exception $err) {
-          $this->event_log($customer_id, "page update source", $stripe_source_id, $err->getMessage());
-          // failed to update existing source, so create new one
-          unset($stripe_source_id);
-          if (tep_session_is_registered('stripe_source_id')) {
-            tep_session_unregister('stripe_source_id');
-          }
-        }
+    // have to create source before loading the javascript because it needs the source id - first make sure it's up to date if we already have one
+    if (isset($_SESSION['stripe_source_id'])) {
+      try {
+        $this->source = $stripe->sources->update($_SESSION['stripe_source_id'], $params);
+        $this->event_log($_SESSION['customer_id'], "page update source", $_SESSION['stripe_source_id'], $this->source);
+      } catch (exception $err) {
+        $this->event_log($_SESSION['customer_id'], "page update source", $_SESSION['stripe_source_id'], $err->getMessage());
+        // failed to update existing source, so create new one
+        unset($_SESSION['stripe_source_id']);
       }
-      
-      $caught_error = '';
+    }
 
-      if (!isset($stripe_source_id)) {
+    $caught_error = '';
 
-        if (isset($source_items) && is_array($source_items) && count($source_items)) {
-          $params['source_order']['items'] = $source_items;
-        }
-        $params['type'] = 'klarna';
-        $params['amount'] = $this->format_raw($order->info['total']);
-        $params['currency'] = $currency;
-        $params['metadata'] = $metadata;
-        $params['klarna']['product'] = 'payment';
-        $params['klarna']['purchase_country'] = $order->customer['country']['iso_code_2'];
-    //  $params['klarna']['custom_payment_methods'] =  // reqd for US payin4 / installments / payin4,installments (for Pay later and Slice it & both)
+    if (!isset($_SESSION['stripe_source_id'])) {
 
-        try {
-          $this->source = $stripe->sources->create($params);
-          $this->event_log($customer_id, "page create source", json_encode($params), $this->source);
-          $stripe_source_id = $this->source->id;
-          tep_session_register('stripe_source_id');
-        } catch (exception $err) {
-          $this->event_log($customer_id, "page create source", json_encode($params), $err->getMessage() . ":\n" . $err->getTraceAsString());
-          $caught_error = $err->getMessage();
-          /*
-          // failed to create source - this is fatal, so set error and go back to checkout_payment
-          $klarna_error = [
-            'type' => "page create source",
-            'code' => get_class($err),
-            'msg' => $err->getMessage(),
-          ];
-          tep_session_register('klarna_error');
-          $page = tep_href_link('checkout_payment.php', 'error=error');
-          $content = <<<EOS
+      if (isset($source_items) && is_array($source_items) && count($source_items)) {
+        $params['source_order']['items'] = $source_items;
+      }
+      $params['type'] = 'klarna';
+      $params['amount'] = $this->format_raw($GLOBALS['order']->info['total']);
+      $params['currency'] = $_SESSION['currency'];
+      $params['metadata'] = $metadata;
+      $params['klarna']['product'] = 'payment';
+      $params['klarna']['purchase_country'] = $GLOBALS['order']->customer['country']['iso_code_2'];
+  //  $params['klarna']['custom_payment_methods'] =  // reqd for US payin4 / installments / payin4,installments (for Pay later and Slice it & both)
+
+      try {
+        $this->source = $stripe->sources->create($params);
+        $this->event_log($_SESSION['customer_id'], "page create source", json_encode($params), $this->source);
+        $_SESSION['stripe_source_id'] = $this->source->id;
+      } catch (exception $err) {
+        $this->event_log($_SESSION['customer_id'], "page create source", json_encode($params), $err->getMessage() . ":\n" . $err->getTraceAsString());
+        $caught_error = $err->getMessage();
+        /*
+        // failed to create source - this is fatal, so set error and go back to checkout_payment
+        $klarna_error = [
+          'type' => "page create source",
+          'code' => get_class($err),
+          'msg' => $err->getMessage(),
+        ];
+        tep_session_register('klarna_error');
+        $page = tep_href_link('checkout_payment.php', 'error=error');
+        $content = <<<EOS
 <script>window.location.replace("{$page}");</script>
 EOS;
-          return array('title' => $content);
-          */
-        }
-      } 
- 
-      // exit(print_r($this->source, true));
-      
-      $content .= '<input type="hidden" id="source_id" value="' . tep_output_string($stripe_source_id) . '" />' . '<input type="hidden" id="secret" value="' . tep_output_string($this->source->client_secret) . '" />';
-      
-      $karna_divs = '';
-      $k_opts = [
-        'pay_later' => MODULE_PAYMENT_STRIPE_KLARNA_PAY_LATER,
-        'pay_now' => MODULE_PAYMENT_STRIPE_KLARNA_PAY_NOW,
-        'pay_over_time' => MODULE_PAYMENT_STRIPE_KLARNA_PAY_OVER_TIME
-      ];
-      $count = 0;
-      if (isset($this->source->klarna->payment_method_categories)) {
-        $cats = explode(',', $this->source->klarna->payment_method_categories);
-        $count = count($cats);
-        if ($count) {
-          foreach ($cats as $cat) {
-            // frozen version:
-            if ($count > 2) { $class = 'col-sm-6 col-lg-4'; }
-            elseif ($count == 2) { $class = 'col-sm-6'; }
-            else { $class = 'col-12'; }
-            $karna_divs .= '<div class="' . $class . '"><div class="klarna-option"><div class="klarna-option-hdr">';
-            if (array_key_exists($cat, $k_opts)) {
-              $karna_divs .= ($count > 1 ? tep_draw_radio_field('klarna_option', $cat, false, 'id="klarna_' . $cat . '_option" required="required"') : tep_draw_hidden_field('klarna_option', $cat, 'id="klarna_' . $cat . '_option"')) . ' ' . $k_opts[$cat];
-            }
-            $karna_divs .= '</div><div id="klarna_' . $cat . '_container"></div></div></div>';
+        return array('title' => $content);
+        */
+      }
+    } 
+
+    // exit(print_r($this->source, true));
+
+    $content .= '<input type="hidden" id="source_id" value="' . tep_output_string($_SESSION['stripe_source_id']) . '" />' . '<input type="hidden" id="secret" value="' . tep_output_string($this->source->client_secret) . '" />';
+
+    $karna_divs = '';
+    $k_opts = [
+      'pay_later' => MODULE_PAYMENT_STRIPE_KLARNA_PAY_LATER,
+      'pay_now' => MODULE_PAYMENT_STRIPE_KLARNA_PAY_NOW,
+      'pay_over_time' => MODULE_PAYMENT_STRIPE_KLARNA_PAY_OVER_TIME
+    ];
+    $count = 0;
+    if (isset($this->source->klarna->payment_method_categories)) {
+      $cats = explode(',', $this->source->klarna->payment_method_categories);
+      $count = count($cats);
+      if ($count) {
+        foreach ($cats as $cat) {
+          // frozen version:
+          if ($count > 2) { $class = 'col-sm-6 col-lg-4'; }
+          elseif ($count == 2) { $class = 'col-sm-6'; }
+          else { $class = 'col-12'; }
+          $karna_divs .= '<div class="' . $class . '"><div class="klarna-option"><div class="klarna-option-hdr">';
+          if (array_key_exists($cat, $k_opts)) {
+            $karna_divs .= ($count > 1 ? tep_draw_radio_field('klarna_option', $cat, false, 'id="klarna_' . $cat . '_option" required="required"') : tep_draw_hidden_field('klarna_option', $cat, 'id="klarna_' . $cat . '_option"')) . ' ' . $k_opts[$cat];
           }
+          $karna_divs .= '</div><div id="klarna_' . $cat . '_container"></div></div></div>';
         }
       }
+    }
 
-      $content .= '<div id="stripe_karna" class="row">' . $karna_divs . '</div><div id="klarna-errors" role="alert" class="messageStackError payment-errors">' . $caught_error . '</div>';
-      
-      // frozen version:
-      $content .= <<<EOS
+    $content .= '<div id="stripe_karna" class="row">' . $karna_divs . '</div><div id="klarna-errors" role="alert" class="messageStackError payment-errors">' . $caught_error . '</div>';
+
+    // frozen version:
+    $script = <<<EOS
 <script>
 $('#stripe_karna').parent().parent().removeClass('col-sm-6').addClass('col-12');
 </script>
 EOS;
-      if (strlen($caught_error)) {
-        // error thrown so don't try to load klarna just disable button
-        $script = <<<EOS
+    if (strlen($caught_error)) {
+      // error thrown so don't try to load klarna just disable button
+      $script .= <<<EOS
 <script>
 $('form[name="checkout_confirmation"] .btn-success').attr('disabled', true);
 </script>
 EOS;
-      } else {
+    } else {
   
-      $script = <<<EOS
+    $script .= <<<EOS
 <script>
 $('form[name="checkout_confirmation"] .btn-success').attr('id', 'pay-button');
 
@@ -572,9 +562,9 @@ document.getElementById("pay-button").addEventListener("click", function(e){
 <script src="https://x.klarnacdn.net/kp/lib/v1/api.js" async></script>
 EOS;
       }
-      
+
       if ($this->templateClassExists()) {
-        $oscTemplate->addBlock($script, 'footer_scripts');
+        $GLOBALS['oscTemplate']->addBlock($script, 'footer_scripts');
       } else {
         $content .= $script;
       }
@@ -583,22 +573,30 @@ EOS;
 
       return $confirmation;
     }
+  }
+
+  private function extract_cart_id() {
+    return substr($_SESSION['cart_Stripe_Klarna_ID'], 0, strpos($_SESSION['cart_Stripe_Klarna_ID'], '-'));
+  }
+
+  private function extract_order_id() {
+    return substr($_SESSION['cart_Stripe_Klarna_ID'], strpos($_SESSION['cart_Stripe_Klarna_ID'], '-') + 1);
+  }
 
     function process_button() {
       return false;
     }
 
     function before_process() {
-      global $stripe_source_id;
 
       $this->after_process();
     }
 
     function after_process() {
-      global $cart, $order, $order_totals, $currencies, $OSCOM_Hooks, $oscTemplate, $insert_id, $products_ordered, $cart_Stripe_Klarna_ID, $stripe_source_id;
+      global $cart, $order, $order_totals, $currencies, $OSCOM_Hooks, $insert_id, $products_ordered, $cart_Stripe_Klarna_ID, $stripe_source_id;
 
-      if (tep_session_is_registered('cart_Stripe_Klarna_ID')) {
-        $order_id = substr($cart_Stripe_Klarna_ID, strpos($cart_Stripe_Klarna_ID, '-') + 1);
+      if (isset($_SESSION['cart_Stripe_Klarna_ID'])) {
+        $order_id = $this->extract_order_id();
         
         // klarna works async so the order may just be submitted, successful or failed - act accordingly
         // 
@@ -675,21 +673,21 @@ EOS;
     function post_process() {
       // deferred from after_process to as late as possible - run from a hook in checkout success
       // redirect to checkout if it failed after checkout process or do session cleanup otherwise 
-      global $order_id, $cart, $order, $order_totals, $currencies, $OSCOM_Hooks, $oscTemplate, $insert_id, $products_ordered, $cart_Stripe_Klarna_ID, $stripe_source_id, $messageStack, $klarna_error;
+      global $cart, $order, $order_totals, $currencies, $OSCOM_Hooks, $insert_id, $products_ordered, $cart_Stripe_Klarna_ID, $stripe_source_id, $messageStack, $klarna_error;
       
       $return = '';
 
-      if (tep_session_is_registered('cart_Stripe_Klarna_ID')) {
-        $chk_order_id = substr($cart_Stripe_Klarna_ID, strpos($cart_Stripe_Klarna_ID, '-') + 1);
+      if (isset($_SESSION['cart_Stripe_Klarna_ID'])) {
+        $chk_order_id = $this->extract_order_id();
         
-        if ($chk_order_id == $order_id) {
+        if ($chk_order_id == $GLOBALS['order_id']) {
           
-          $chk_q = tep_db_query('select orders_status from orders where orders_id = ' . (int)$order_id);
+          $chk_q = tep_db_query('select orders_status from orders where orders_id = ' . (int)$GLOBALS['order_id']);
           if (tep_db_num_rows($chk_q)) {
             $chk_o = tep_db_fetch_array($chk_q);
             if ($chk_o['orders_status'] == MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID) {
 
-              $error = $this->get_last_event_error($order_id, $customer_id);
+              $error = $this->get_last_event_error($GLOBALS['order_id'], $_SESSION['customer_id']);
               tep_redirect(tep_href_link('checkout_payment.php', 'error=' . $error, 'SSL'));
             }
             
@@ -698,26 +696,24 @@ EOS;
               $messageStack->add('header', MODULE_PAYMENT_STRIPE_KLARNA_TRAN_INCOMPLETE, 'warning');
             }
 
-            tep_db_query("delete from customers_basket where customers_id = '" . (int) $customer_id . "'");
-            tep_db_query("delete from customers_basket_attributes where customers_id = '" . (int) $customer_id . "'");
+            tep_db_query("delete from customers_basket where customers_id = '" . (int)$_SESSION['customer_id'] . "'");
+            tep_db_query("delete from customers_basket_attributes where customers_id = '" . (int)$_SESSION['customer_id'] . "'");
 
-            if (tep_session_is_registered('klarna_error')) {
-                tep_session_unregister('klarna_error');
-            }
-            if (tep_session_is_registered('stripe_source_id')) {
-                tep_session_unregister('stripe_source_id');
+            if (isset($_SESSION['klarna_error'])) {
+                unset($_SESSION['klarna_error']);
             }
 
             $cart->reset(true);
 
     // unregister session variables used during checkout
-            tep_session_unregister('sendto');
-            tep_session_unregister('billto');
-            tep_session_unregister('shipping');
-            tep_session_unregister('payment');
-            tep_session_unregister('comments');
+            unset($_SESSION['sendto']);
+            unset($_SESSION['billto']);
+            unset($_SESSION['shipping']);
+            unset($_SESSION['payment']);
+            unset($_SESSION['comments']);
 
-            tep_session_unregister('cart_Stripe_Klarna_ID');
+            unset($_SESSION['stripe_source_id']);
+            unset($_SESSION['cart_Stripe_Klarna_ID']);
             
           }
         }
@@ -726,11 +722,12 @@ EOS;
   
     function complete_order_email($order_id, $customer_id) {
       // this is run from webhook (so not customer session)
-      global $currencies;
+      global $currencies, $customer;
       
       if ((int)$order_id > 0 && tep_db_num_rows(tep_db_query('select 1 from orders where orders_id = ' . (int)$order_id . ' and customers_id = ' . (int)$customer_id))) {
         
         $order = new order((int)$order_id);
+        $customer = new customer();
         
         $insert_id = $order_id;
 
@@ -804,40 +801,42 @@ EOS;
 
 // lets start with the email confirmation
         $email_order = STORE_NAME . "\n" .
-                EMAIL_SEPARATOR . "\n" .
-                EMAIL_TEXT_ORDER_NUMBER . ' ' . $order_id . "\n" .
-                EMAIL_TEXT_INVOICE_URL . ' ' . tep_href_link('account_history_info.php', 'order_id=' . $order_id, 'SSL', false) . "\n" .
-                EMAIL_TEXT_DATE_ORDERED . ' ' . strftime(DATE_FORMAT_LONG) . "\n\n";
-        if ($order->info['comments']) {
+                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
+                MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED . "\n" .
+                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
+                MODULE_NOTIFICATIONS_CHECKOUT_TEXT_ORDER_NUMBER . ' ' . $order_id . "\n" .
+                MODULE_NOTIFICATIONS_CHECKOUT_TEXT_INVOICE_URL . ' ' . tep_href_link('account_history_info.php', 'order_id=' . $order_id, 'SSL', false) . "\n" .
+                MODULE_NOTIFICATIONS_CHECKOUT_TEXT_DATE_ORDERED . ' ' . strftime(DATE_FORMAT_LONG) . "\n\n";
+        if (isset($order->info['comments'])) {
             $email_order .= tep_db_output($order->info['comments']) . "\n\n";
         }
-        $email_order .= EMAIL_TEXT_PRODUCTS . "\n" .
-                EMAIL_SEPARATOR . "\n" .
+        $email_order .= MODULE_NOTIFICATIONS_CHECKOUT_TEXT_PRODUCTS . "\n" .
+                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
                 $products_ordered .
-                EMAIL_SEPARATOR . "\n";
+                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n";
 
-        for ($i = 0, $n = sizeof($order_totals); $i < $n; $i++) {
-            $email_order .= strip_tags($order_totals[$i]['title']) . ' ' . strip_tags($order_totals[$i]['text']) . "\n";
+        for ($i = 0, $n = sizeof($order->totals); $i < $n; $i++) {
+            $email_order .= strip_tags($order->totals[$i]['title']) . ' ' . strip_tags($order->totals[$i]['text']) . "\n";
         }
 
         if ($order->content_type != 'virtual') {
-            $email_order .= "\n" . EMAIL_TEXT_DELIVERY_ADDRESS . "\n" .
-                    EMAIL_SEPARATOR . "\n" .
-                    tep_address_format($order->delivery['format_id'], $order->delivery, false, '', "\n") . "\n";
+            $email_order .= "\n" . MODULE_NOTIFICATIONS_CHECKOUT_TEXT_DELIVERY_ADDRESS . "\n" .
+                    MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
+                     tep_address_format($order->delivery['format_id'], $order->delivery, false, '', "\n") . "\n";
         }
 
-        $email_order .= "\n" . EMAIL_TEXT_BILLING_ADDRESS . "\n" .
-                EMAIL_SEPARATOR . "\n" .
+        $email_order .= "\n" . MODULE_NOTIFICATIONS_CHECKOUT_TEXT_BILLING_ADDRESS . "\n" .
+                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
                 tep_address_format($order->billing['format_id'], $order->billing, false, '', "\n") . "\n\n";
 
-        $email_order .= EMAIL_TEXT_PAYMENT_METHOD . "\n" .
-                EMAIL_SEPARATOR . "\n";
+        $email_order .= MODULE_NOTIFICATIONS_CHECKOUT_TEXT_PAYMENT_METHOD . "\n" .
+                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n";
         $email_order .= $this->title . "\n\n";
         if ($this->email_footer) {
             $email_order .= $this->email_footer . "\n\n";
         }
 
-        tep_mail($order->customer['name'], $order->customer['email_address'], EMAIL_TEXT_SUBJECT, $email_order, STORE_OWNER, STORE_OWNER_EMAIL_ADDRESS);
+        tep_mail($order->customer['name'], $order->customer['email_address'], MODULE_NOTIFICATIONS_CHECKOUT_TEXT_SUBJECT, $email_order, STORE_OWNER, STORE_OWNER_EMAIL_ADDRESS);
 
 // send emails to other people
         if (SEND_EXTRA_ORDER_EMAILS_TO != '') {
@@ -857,13 +856,15 @@ EOS;
         $sql_data_array = [
           'orders_id' => $order_id,
           'orders_status_id' => $o_status,
+          'customer_notified' => 1,
+          'comments' => MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED,
           'date_added' => 'now()',
         ];
         tep_db_perform('orders_status_history', $sql_data_array);
 
       } else {
         
-        error_log(sprintf(MODULE_PAYMENT_STRIPE_KLARNA_MISMATCH_ORDER_CUSTOMER, $order_id, $customer_id));
+        error_log( sprintf(MODULE_PAYMENT_STRIPE_KLARNA_MISMATCH_ORDER_CUSTOMER, $order_id, $customer_id));
        
       }
       
@@ -907,7 +908,7 @@ EOS;
       return $error;
     }
 
-    function check() {
+ /*   function check() {
       if (!isset($this->_check)) {
         $check_query = tep_db_query("select configuration_value from configuration where configuration_key = 'MODULE_PAYMENT_STRIPE_KLARNA_STATUS'");
         $this->_check = tep_db_num_rows($check_query);
@@ -947,25 +948,7 @@ EOS;
 
         tep_db_perform("configuration", $sql_data_array);
       }
-    }
-
-    function remove() {
-      tep_db_query("delete from configuration where configuration_key in ('" . implode("', '", $this->keys()) . "')");
-    }
-
-    function keys() {
-      $keys = array_keys($this->getParams());
-
-      if ($this->check()) {
-        foreach ($keys as $key) {
-          if (!defined($key)) {
-            $this->install($key);
-          }
-        }
-      }
-
-      return $keys;
-    }
+    } */
 
     function event_log($customer_id, $action, $request, $response) {
       if (MODULE_PAYMENT_STRIPE_KLARNA_LOG == "True") {
@@ -973,34 +956,39 @@ EOS;
       }
     }
   
-    function checkOrderStatus($status_name, $public_flag = 0) {
-      $check_query = tep_db_query("select orders_status_id from orders_status where orders_status_name = '{$status_name}' limit 1");
+    // not needed from phoenix 1.0.7.8 when flags added to abstract_payment_module
+    public static function ensure_order_status($constant_name, $order_status_name, $public_flag = 0, $downloads_flag = 0) {
+      if (defined($constant_name)) {
+        return constant($constant_name);
+      }
+
+      $check_sql = "SELECT orders_status_id FROM orders_status WHERE orders_status_name = '" . tep_db_input($order_status_name) . "' LIMIT 1";
+      $check_query = tep_db_query($check_sql);
 
       if (tep_db_num_rows($check_query) < 1) {
-        $status_query = tep_db_query("select max(orders_status_id) as status_id from orders_status");
-        $status = tep_db_fetch_array($status_query);
+        $next_id = tep_db_fetch_array(tep_db_query("SELECT MAX(orders_status_id) + 1 AS next_id FROM orders_status"))['next_id'] ?? 1;
 
-        $status_id = $status['status_id'] + 1;
+        tep_db_query(sprintf(<<<'EOSQL'
+INSERT INTO orders_status (orders_status_id, language_id, orders_status_name, public_flag, downloads_flag)
+ SELECT
+   %d AS orders_status_id,
+   l.languages_id AS language_id,
+   '%s' AS orders_status_name,
+   %d AS public_flag,
+   %d AS downloads_flag
+ FROM languages l
+ ORDER BY l.sort_order
+EOSQL
+          , (int)$next_id, tep_db_input($order_status_name), (int)$public_flag, (int)$downloads_flag));
 
-        $languages = tep_get_languages();
-
-        foreach ($languages as $lang) {
-          tep_db_query("insert into orders_status (orders_status_id, language_id, orders_status_name) values ('" . $status_id . "', '" . $lang['id'] . "', '{$status_name}')");
-        }
-
-        $flags_query = tep_db_query("describe orders_status public_flag");
-        if (tep_db_num_rows($flags_query) == 1) {
-          tep_db_query("update orders_status set public_flag = {$public_flag} and downloads_flag = 0 where orders_status_id = '{$status_id}'");
-        }
-      } else {
-        $check = tep_db_fetch_array($check_query);
-
-        $status_id = $check['orders_status_id'];
+        $check_query = tep_db_query($check_sql);
       }
-      return $status_id;
+
+      $check = tep_db_fetch_array($check_query);
+      return $check['orders_status_id'];
     }
 
-    function getParams() {
+    function get_parameters() {
       if (tep_db_num_rows(tep_db_query("show tables like 'stripe_event_log'")) != 1) {
         $sql = <<<EOD
 CREATE TABLE stripe_event_log (
@@ -1019,45 +1007,9 @@ EOD;
         $chk_q = tep_db_query("show columns from stripe_event_log where Field in ('request', 'response') and Type like 'varchar%'");
         if (tep_db_num_rows($chk_q)) {
           while ($col = tep_db_fetch_array($chk_q)) {
-            tep_db_query('alter stripe_event_log modify ' . $col['Field'] . ' text');
+            tep_db_query('alter table stripe_event_log modify `' . $col['Field'] . '` text');
           }
         }
-      }
-
-      if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID')) {
-
-        $prepare_status_id = $this->checkOrderStatus(MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_TEXT);
-
-      } else {
-
-        $prepare_status_id = MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID;
-      }
-
-      if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID')) {
-
-        $status_id = $this->checkOrderStatus(MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_TEXT);
-
-      } else {
-
-        $status_id = MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID;
-      }
-
-      if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID')) {
-
-        $app_status_id = $this->checkOrderStatus(MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_TEXT, 1);
-
-      } else {
-
-        $app_status_id = MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID;
-      }
-
-      if (!defined('MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID')) {
-
-        $fail_status_id = $this->checkOrderStatus(MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_TEXT, 1);
-
-      } else {
-
-        $fail_status_id = MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID;
       }
 
       $params = [
@@ -1112,14 +1064,14 @@ EOD;
         'MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID' => [
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_NEW_ORDER_TITLE,
           'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_NEW_ORDER_DESC,
-          'value' => $prepare_status_id,
+          'value' => self::ensure_order_status('MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID', MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_TEXT),
           'use_func' => 'tep_get_order_status_name',
           'set_func' => 'tep_cfg_pull_down_order_statuses('
         ],
         'MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID' => [
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_APP_ORDER_TITLE,
           'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_APP_ORDER_DESC,
-          'value' => $app_status_id,
+          'value' => self::ensure_order_status('MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_ID', MODULE_PAYMENT_STRIPE_KLARNA_APPLICATION_ORDER_STATUS_TEXT, 1),
           'use_func' => 'tep_get_order_status_name',
           'set_func' => 'tep_cfg_pull_down_order_statuses('
         ],
@@ -1133,14 +1085,14 @@ EOD;
         'MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID' => [
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_FAIL_ORDER_TITLE,
           'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_FAIL_ORDER_DESC,
-          'value' => $fail_status_id,
+          'value' => self::ensure_order_status('MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_ID', MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_TEXT, 1),
           'use_func' => 'tep_get_order_status_name',
           'set_func' => 'tep_cfg_pull_down_order_statuses('
         ],
         'MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID' => [
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TRANSACTION_TITLE,
           'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TRANSACTION_DESC,
-          'value' => $status_id,
+          'value' => self::ensure_order_status('MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID', MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_TEXT),
           'set_func' => 'tep_cfg_pull_down_order_statuses(',
           'use_func' => 'tep_get_order_status_name'
         ],
@@ -1337,9 +1289,82 @@ EOD;
             }
 
             if (!empty($email_body)) {
-                tep_mail('', MODULE_PAYMENT_STRIPE_KLARNA_DEBUG_EMAIL, 'Stripe Debug E-Mail', trim($email_body), STORE_OWNER, STORE_OWNER_EMAIL_ADDRESS);
+                tep_mail('', MODULE_PAYMENT_STRIPE_KLARNA_DEBUG_EMAIL, 'Stripe-Klarna Debug E-Mail', trim($email_body), STORE_OWNER, STORE_OWNER_EMAIL_ADDRESS);
             }
         }
     }
 
+}
+// middling phoenix 1.7. versions aren't all there
+if (! function_exists('tep_address_format')) {
+////
+// Return a formatted address
+// TABLES: address_format
+  function tep_address_format($address_format_id, $address, $html, $boln, $eoln) {
+    $address_format_query = tep_db_query("select address_format as format from address_format where address_format_id = '" . (int)$address_format_id . "'");
+    $address_format = tep_db_fetch_array($address_format_query);
+
+    $company = tep_output_string_protected($address['company']);
+    if (isset($address['firstname']) && tep_not_null($address['firstname'])) {
+      $firstname = tep_output_string_protected($address['firstname']);
+      $lastname = tep_output_string_protected($address['lastname']);
+    } elseif (isset($address['name']) && tep_not_null($address['name'])) {
+      $firstname = tep_output_string_protected($address['name']);
+      $lastname = '';
+    } else {
+      $firstname = '';
+      $lastname = '';
+    }
+    $street = tep_output_string_protected($address['street_address']);
+    $suburb = tep_output_string_protected($address['suburb']);
+    $city = tep_output_string_protected($address['city']);
+    $state = tep_output_string_protected($address['state']);
+    if (isset($address['country_id']) && tep_not_null($address['country_id'])) {
+      $country = tep_get_country_name($address['country_id']);
+
+      if (isset($address['zone_id']) && tep_not_null($address['zone_id'])) {
+        $state = tep_get_zone_code($address['country_id'], $address['zone_id'], $state);
+      }
+    } elseif (isset($address['country']) && tep_not_null($address['country'])) {
+      $country = tep_output_string_protected($address['country']['title']);
+    } else {
+      $country = '';
+    }
+    $postcode = tep_output_string_protected($address['postcode']);
+    $zip = $postcode;
+
+    if ($html) {
+// HTML Mode
+      $HR = '<hr />';
+      $hr = '<hr />';
+      if ( ($boln == '') && ($eoln == "\n") ) { // Values not specified, use rational defaults
+        $CR = '<br />';
+        $cr = '<br />';
+        $eoln = $cr;
+      } else { // Use values supplied
+        $CR = $eoln . $boln;
+        $cr = $CR;
+      }
+    } else {
+// Text Mode
+      $CR = $eoln;
+      $cr = $CR;
+      $HR = '----------------------------------------';
+      $hr = '----------------------------------------';
+    }
+
+    $statecomma = '';
+    $streets = $street;
+    if ($suburb != '') $streets = $street . $cr . $suburb;
+    if ($state != '') $statecomma = $state . ', ';
+
+    $fmt = $address_format['format'];
+    eval("\$address = \"$fmt\";");
+
+    if ( (ACCOUNT_COMPANY == 'true') && (tep_not_null($company)) ) {
+      $address = $company . $cr . $address;
+    }
+
+    return $address;
+  }
 }

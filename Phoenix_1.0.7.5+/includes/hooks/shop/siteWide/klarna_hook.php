@@ -23,11 +23,11 @@ class hook_shop_siteWide_klarna_hook
     switch (basename($PHP_SELF)) {
         
       case 'checkout_success.php' :
-      
+        
         if (isset($_SESSION['cart_Stripe_Klarna_ID']) && isset($_SESSION['payment']) && $_SESSION['payment'] == 'stripe_klarna') {
 
-          require_once(DIR_FS_CATALOG . "includes/languages/{$language}/modules/payment/stripe_klarna.php");
           if (! class_exists('stripe_klarna')) {
+            require_once(DIR_FS_CATALOG .  "includes/languages/{$language}/modules/payment/stripe_klarna.php");
             require_once(DIR_FS_CATALOG . 'includes/modules/payment/stripe_klarna.php');
           }
 
