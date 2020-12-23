@@ -342,22 +342,22 @@ class stripe_klarna {
           'quantity' => $order->products[$i]['qty'],
         ];
       }
-      if (is_array($order_total_modules->modules)) {
-        foreach ($order_total_modules->modules as $value) {
-          $class = substr($value, 0, strrpos($value, '.'));
-          if ($GLOBALS[$class]->enabled) {
-            $size = sizeof($GLOBALS[$class]->output);
-            for ($i = 0; $i < $size; $i++) {
-              if ($GLOBALS[$class]->code == 'ot_tax' || $GLOBALS[$class]->code == 'ot_shipping') {
-                $source_items[] = [
-                  'type' => substr($GLOBALS[$class]->code, 3),
-                  'currency' => $currency,
-                  'amount' => $this->format_raw($GLOBALS[$class]->output[$i]['value']),
-                  'description' => $GLOBALS[$class]->output[$i]['title']
-                ];
-              }
-            }
-          }
+      
+      $ots = $GLOBALS['order_total_modules']->process();
+      $charges = 0;
+      foreach ($ots as $ot) {
+        if ($ot['code'] == 'ot_tax' || $ot['code'] == 'ot_shipping') {
+          $source_items[] = [
+            'type' => substr($ot['code'], 3),
+            'currency' => $currency,
+            'amount' => $this->format_raw($ot['value']),
+            'description' => $ot['title']
+          ];
+          $charges += $ot['value'];
+        } elseif ($ot['code'] == 'ot_subtotal') {
+          $o_subtotal = $ot['value'];
+        } elseif ($ot['code'] == 'ot_total') {
+          $o_total = $this->format_raw($ot['value']);
         }
       }
 
@@ -385,7 +385,10 @@ class stripe_klarna {
           $params['source_order']['items'] = $source_items;
         }
         $params['type'] = 'klarna';
-        $params['amount'] = $this->format_raw($order->info['total']);
+        $params['amount'] = $this->format_raw($o_subtotal + $charges);
+        // need order total including shipping tax, so recalculate...
+        //$params['amount'] = $this->format_raw($order->info['total']);
+        
         $params['currency'] = $currency;
         $params['metadata'] = $metadata;
         $params['klarna']['product'] = 'payment';
