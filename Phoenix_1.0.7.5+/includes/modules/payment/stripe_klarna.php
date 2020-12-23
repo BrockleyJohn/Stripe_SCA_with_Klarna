@@ -395,10 +395,10 @@ class stripe_klarna extends abstract_payment_module {
         $klarna_error = [
           'type' => "page create source",
           'code' => get_class($err),
-          'msg' => $err->getMessage(),
+          'msg' => $caught_error,
         ];
         tep_session_register('klarna_error');
-        $page = tep_href_link('checkout_payment.php', 'error=error');
+        $page = tep_href_link('checkout_payment.php', 'payment_error='.$this->code.'&error=error');
         $content = <<<EOS
 <script>window.location.replace("{$page}");</script>
 EOS;
@@ -408,9 +408,9 @@ EOS;
     } 
 
     // exit(print_r($this->source, true));
-
-    $content .= '<input type="hidden" id="source_id" value="' . tep_output_string($_SESSION['stripe_source_id']) . '" />' . '<input type="hidden" id="secret" value="' . tep_output_string($this->source->client_secret) . '" />';
-
+    if (! strlen($caught_error)) {
+      $content .= '<input type="hidden" id="source_id" value="' . tep_output_string($_SESSION['stripe_source_id']) . '" />' . '<input type="hidden" id="secret" value="' . tep_output_string($this->source->client_secret) . '" />';
+    }
     $karna_divs = '';
     $k_opts = [
       'pay_later' => MODULE_PAYMENT_STRIPE_KLARNA_PAY_LATER,
@@ -436,7 +436,7 @@ EOS;
       }
     }
 
-    $content .= '<div id="stripe_karna" class="row">' . $karna_divs . '</div><div id="klarna-errors" role="alert" class="messageStackError payment-errors">' . $caught_error . '</div>';
+    $content .= '<div id="stripe_karna" class="row">' . $karna_divs . '</div><div id="klarna-errors" role="alert" class="text-danger payment-errors">' . $caught_error . '</div>';
 
     // frozen version:
     $script = <<<EOS
@@ -453,7 +453,11 @@ $('form[name="checkout_confirmation"] .btn-success').attr('disabled', true);
 EOS;
     } else {
   
-    $script .= <<<EOS
+      $param = (MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API == 'Europe' ? 'container: "#klarna_" + category + "_container",
+        payment_method_category: category,' : 'container: "#klarna_" + category + "_container",
+      payment_method_categories: available_categories,
+      instance_id : "klarna-payments-instance-id"');
+      $script .= <<<EOS
 <script>
 $('form[name="checkout_confirmation"] .btn-success').attr('id', 'pay-button');
 
@@ -479,8 +483,7 @@ window.klarnaAsyncCallback = function () {
   } else {
     available_categories.forEach(function (category) {
       Klarna.Payments.load({
-        container: "#klarna_" + category + "_container",
-        payment_method_category: category,
+        {$param}
       }, function(res) {
         if (res.show_form) {
           /*
@@ -507,7 +510,7 @@ function getSelectedCategory() {
   var choices = document.getElementsByName('klarna_option');
   var chosen;
   for (var i = 0; i < choices.length; i++) {
-    if (choices[i].checked) {
+    if (choices.length == 1 || choices[i].checked) {
       chosen = choices[i];
       break;
     }
@@ -519,6 +522,7 @@ function getSelectedCategory() {
 }
 EOS;
 
+      $param = (MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API == 'Europe' ? 'payment_method_category: selectedCategory' : 'instance_id : "klarna-payments-instance-id"');
       $script .= <<<EOS
 
 document.getElementById("pay-button").addEventListener("click", function(e){
@@ -531,7 +535,7 @@ document.getElementById("pay-button").addEventListener("click", function(e){
   // Submit the payment for authorization with the selected category
   if (selectedCategory) {
     Klarna.Payments.authorize({
-      payment_method_category: selectedCategory
+      {$param}
     }, function(res) {
       if (res.approved) {
         // Payment has been authorized - submit the form
@@ -543,7 +547,7 @@ document.getElementById("pay-button").addEventListener("click", function(e){
           // handle other states
           if (res.show_form == false) {
             var choice = document.getElementById("klarna_" + selectedCategory + "_option");
-            if (typeof choice !== 'undefined') {
+            if (choice) {
               choice.parentNode.removeChild(choice);
             }
             option_count--;
@@ -1018,6 +1022,12 @@ EOD;
           'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_STATUS_DESC,
           'value' => 'True',
           'set_func' => 'tep_cfg_select_option(array(\'True\', \'False\'), '
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API_DESC,
+          'value' => 'Europe',
+          'set_func' => 'tep_cfg_select_option(array(\'Europe\', \'US\'), '
         ],
         'MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_SERVER' => [
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SERVER_TITLE,
