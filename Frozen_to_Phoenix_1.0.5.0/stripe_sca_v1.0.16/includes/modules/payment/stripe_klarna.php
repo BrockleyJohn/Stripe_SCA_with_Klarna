@@ -330,6 +330,7 @@ class stripe_klarna {
       ];
       
       $source_items = [];
+      $charges = 0;
 
       for ($i = 0, $n = sizeof($order->products); $i < $n; $i++) {
                   
@@ -341,27 +342,38 @@ class stripe_klarna {
           'description' => $order->products[$i]['name'],
           'quantity' => $order->products[$i]['qty'],
         ];
+        $charges += $order->products[$i]['final_price'] * $order->products[$i]['qty'];
       }
+      
       if (is_array($order_total_modules->modules)) {
         foreach ($order_total_modules->modules as $value) {
           $class = substr($value, 0, strrpos($value, '.'));
           if ($GLOBALS[$class]->enabled) {
             $size = sizeof($GLOBALS[$class]->output);
             for ($i = 0; $i < $size; $i++) {
-              if ($GLOBALS[$class]->code == 'ot_tax' || $GLOBALS[$class]->code == 'ot_shipping') {
+//              if ($GLOBALS[$class]->code == 'ot_tax' || $GLOBALS[$class]->code == 'ot_shipping' || $GLOBALS[$class]->code == 'ot_subtotal') {
+              if ($GLOBALS[$class]->code == 'ot_tax') {
                 $source_items[] = [
                   'type' => substr($GLOBALS[$class]->code, 3),
                   'currency' => $currency,
                   'amount' => $this->format_raw($GLOBALS[$class]->output[$i]['value']),
                   'description' => $GLOBALS[$class]->output[$i]['title']
                 ];
+                $charges += $GLOBALS[$class]->output[$i]['value'];
+              } elseif ($GLOBALS[$class]->code == 'ot_shipping') {
+                $source_items[] = [
+                  'type' => substr($GLOBALS[$class]->code, 3),
+                  'currency' => $currency,
+                  'amount' => $this->format_raw($GLOBALS['shipping']['cost']),
+                  'description' => $GLOBALS[$class]->output[$i]['title']
+                ];
+                $charges += $GLOBALS['shipping']['cost'];
               }
             }
           }
         }
-      }
-
-
+      } 
+      
       // have to create source before loading the javascript because it needs the source id - or make sure it's up to date if we already have one
       if (isset($stripe_source_id)) {
         try {
@@ -385,12 +397,17 @@ class stripe_klarna {
           $params['source_order']['items'] = $source_items;
         }
         $params['type'] = 'klarna';
-        $params['amount'] = $this->format_raw($order->info['total']);
+//        $params['amount'] = $this->format_raw($order->info['total']);
+        $params['amount'] = $this->format_raw($charges);
         $params['currency'] = $currency;
         $params['metadata'] = $metadata;
         $params['klarna']['product'] = 'payment';
         $params['klarna']['purchase_country'] = $order->customer['country']['iso_code_2'];
     //  $params['klarna']['custom_payment_methods'] =  // reqd for US payin4 / installments / payin4,installments (for Pay later and Slice it & both)
+        
+//        exit(print_r($shipping, true));
+
+//        exit(json_encode($ots) . json_encode($params));
 
         try {
           $this->source = $stripe->sources->create($params);
