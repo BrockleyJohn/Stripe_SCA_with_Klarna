@@ -53,9 +53,10 @@ function jTraceEx($e, $seen=null) {
 chdir('../../../../');
 require('includes/application_top.php');
 
-require_once("includes/languages/{$language}/modules/payment/stripe_klarna.php");
-require_once("includes/languages/{$language}/checkout_process.php");
+//include_once("includes/languages/{$language}/checkout_process.php");
+@include_once("includes/languages/{$language}/modules/notifications/n_checkout.php");
 if (! class_exists('stripe_klarna')) {
+  require_once("includes/languages/{$language}/modules/payment/stripe_klarna.php");
   require_once('includes/modules/payment/stripe_klarna.php');
 }
 
@@ -162,7 +163,7 @@ function processChargeFailure($charge, $stripe_klarna, $event, $order_id, $custo
       tep_db_perform('orders_status_history', $sql_data);
 
       // let the customer know it failed
-      $email_text = sprintf(MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_TEXT, $chk_o['customers_name'], $order_id) . "\n\n" . EMAIL_TEXT_INVOICE_URL . ' ' . tep_href_link('account_history_info.php', 'order_id=' . $order_id, 'SSL', false) . "\n";
+      $email_text = sprintf(MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_TEXT, $chk_o['customers_name'], $order_id) . "\n\n" . MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_TEXT_INVOICE_URL . ' ' . tep_href_link('account_history_info.php', 'order_id=' . $order_id, 'SSL', false) . "\n";
       tep_mail($order->customer['name'], $order->customer['email_address'], MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_SUBJECT, $email_text, STORE_OWNER, STORE_OWNER_EMAIL_ADDRESS);
       // send emails to other people
       if (SEND_EXTRA_ORDER_EMAILS_TO != '') {

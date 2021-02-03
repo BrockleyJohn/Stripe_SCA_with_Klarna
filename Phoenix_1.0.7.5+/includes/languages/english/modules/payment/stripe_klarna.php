@@ -29,7 +29,7 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_STATUS_DESC', 'Do you want to accept Klarna payments via Stripe?');
   define('MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API_TITLE', 'Which API');
   define('MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API_DESC', 'Is your store in Europe or the US?');
-define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SERVER_TITLE', 'Transaction Server');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SERVER_TITLE', 'Transaction Server');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SERVER_DESC', 'Perform transactions on the production server or on the testing server.');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_PUB_TITLE', 'Live Publishable API Key');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_PUB_DESC', 'The Stripe account publishable API key to use for production transactions.');

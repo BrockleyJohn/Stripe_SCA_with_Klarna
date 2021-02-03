@@ -1,0 +1,53 @@
+<script>
+// Load the Klarna JavaScript SDK
+window.klarnaAsyncCallback = function () {
+
+  // Initialize the SDK
+  Klarna.Payments.init({
+    client_token: source.klarna.client_token,
+  });
+
+  // Load the widget as combination of payment method categories:
+  // - pay_later
+  // - pay_over_time
+  // - pay_now
+  var available_categories = source.klarna.payment_method_category.split(',');
+
+    Klarna.Payments.load({
+      container: "#klarna_combined_container",
+      payment_method_categories: available_categories,
+      instance_id : "klarna-payments-instance-id"
+    }, function(res) {
+      if (res.show_form) {
+        /*
+        * this payment method category can be used, allow the customer
+        * to choose it in your interface.
+        */
+      } else {
+        // this payment method category is not available
+      }
+    });
+};
+
+document.getElementByID("pay-button").addEventListener("click", function(){
+  // get the category the customer chose(using your own code)
+  var selectedCategory = getSelectedCategory();
+  // Submit the payment for authorization with the selected category
+  Klarna.Payments.authorize({
+    instance_id : "klarna-payments-instance-id"
+  }, function(res) {
+    if (res.approved) {
+      // Payment has been authorized
+    } else {
+      if (res.error) {
+        // Payment not authorized or an error has occurred
+      } else {
+        // handle other states
+      }
+    }
+  })
+});
+
+</script>
+<script src="https://x.klarnacdn.net/kp/lib/v1/api.js" async></script>
+

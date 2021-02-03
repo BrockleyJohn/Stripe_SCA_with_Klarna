@@ -91,6 +91,7 @@ class stripe_klarna extends abstract_payment_module {
       if (tep_db_num_rows($check_query) < 1) {
         tep_delete_order($order_id);
 
+        tep_delete_order($order_id);
         unset($_SESSION['cart_Stripe_Klarna_ID']);
       }
     }
@@ -197,12 +198,14 @@ class stripe_klarna extends abstract_payment_module {
                         if ($GLOBALS[$class]->enabled) {
                             $size = sizeof($GLOBALS[$class]->output);
                             for ($i = 0; $i < $size; $i++) {
-                                $sql_data_array = array('orders_id' => $insert_id,
-                                    'title' => $GLOBALS[$class]->output[$i]['title'],
-                                    'text' => $GLOBALS[$class]->output[$i]['text'],
-                                    'value' => $GLOBALS[$class]->output[$i]['value'],
-                                    'class' => $GLOBALS[$class]->code,
-                                    'sort_order' => $GLOBALS[$class]->sort_order);
+                $sql_data_array = [
+                  'orders_id' => $insert_id,
+                  'title' => $GLOBALS[$class]->output[$i]['title'],
+                  'text' => $GLOBALS[$class]->output[$i]['text'],
+                  'value' => $GLOBALS[$class]->output[$i]['value'],
+                  'class' => $GLOBALS[$class]->code,
+                  'sort_order' => $GLOBALS[$class]->sort_order
+                ];
 
                                 tep_db_perform("orders_total", $sql_data_array);
                             }
@@ -547,7 +550,7 @@ document.getElementById("pay-button").addEventListener("click", function(e){
           // handle other states
           if (res.show_form == false) {
             var choice = document.getElementById("klarna_" + selectedCategory + "_option");
-            if (choice) {
+            if (typeof choice !== 'undefined') {
               choice.parentNode.removeChild(choice);
             }
             option_count--;

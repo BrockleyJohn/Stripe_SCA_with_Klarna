@@ -27,6 +27,8 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_ERROR_ADMIN_CONFIGURATION', 'This module will not load until the Publishable Key and Secret Key parameters have been configured. Please edit and configure the settings of this module.');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_STATUS_TITLE', 'Enable Stripe Klarna Module');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_STATUS_DESC', 'Do you want to accept Klarna payments via Stripe?');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API_TITLE', 'Which API');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API_DESC', 'Is your store in Europe or the US?');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SERVER_TITLE', 'Transaction Server');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_SERVER_DESC', 'Perform transactions on the production server or on the testing server.');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_LIVE_PUB_TITLE', 'Live Publishable API Key');
@@ -85,8 +87,10 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_CHARGE_FAIL', 'FAIL: Klarna charge failed %s %s');
   define('MODULE_PAYMENT_STRIPE_KLARNA_MISMATCH_ORDER_CUSTOMER', 'Klarna charge succeeded but order %s customer %s not matched');
   define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_INCOMPLETE','Order placed subject to confirmation from Klarna. Check your emails or the order status in your account.');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED','Klarna payment confirmed - order accepted');
   define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_SUBJECT', 'Klarna setup failed - order not placed');
   define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_TEXT', "Dear %s,\n\nSorry but there was a problem setting up the Klarna payment arrangement for order %s. Please contact us to make alternative arrangements to pay.");
+  define('MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_TEXT_INVOICE_URL', 'Order details:');
 
 // connection test
   define('MODULE_PAYMENT_STRIPE_KLARNA_DIALOG_CONNECTION_LINK_TITLE', 'Test API Server Connection');
