@@ -343,20 +343,27 @@ class stripe_klarna extends abstract_payment_module {
       $source_items[] = [
         'type' => 'sku',
         'currency' => $_SESSION['currency'],
-        'amount' => $this->format_raw($GLOBALS['order']->products[$i]['final_price'] * $GLOBALS['order']->products[$i]['qty']),
+        'amount' => $this->format_raw((DISPLAY_PRICE_WITH_TAX == 'true' ? tep_add_tax($order->products[$i]['final_price'], $order->products[$i]['tax']) : $GLOBALS['order']->products[$i]['final_price']) * $GLOBALS['order']->products[$i]['qty']),
         'description' => $GLOBALS['order']->products[$i]['name'],
         'quantity' => $GLOBALS['order']->products[$i]['qty'],
       ];
-      $charges += $order->products[$i]['final_price'] * $order->products[$i]['qty'];
+      $charges += (DISPLAY_PRICE_WITH_TAX == 'true' ? tep_add_tax($order->products[$i]['final_price'], $order->products[$i]['tax']) : $GLOBALS['order']->products[$i]['final_price']) * $order->products[$i]['qty'];
     }
     if (is_array($GLOBALS['order_total_modules']->modules)) {
+      $discounts = [];
+      if (defined('MODULE_PAYMENT_STRIPE_KLARNA_DISCOUNT_MODULES') && strlen(MODULE_PAYMENT_STRIPE_KLARNA_DISCOUNT_MODULES)) {
+        $ds = explode(',', MODULE_PAYMENT_STRIPE_KLARNA_DISCOUNT_MODULES);
+        foreach ($ds as $d) {
+          $discounts[] = trim($d);
+        }
+      }
       foreach ($GLOBALS['order_total_modules']->modules as $value) {
           $class = substr($value, 0, strrpos($value, '.'));
           if ($GLOBALS[$class]->enabled) {
             $size = sizeof($GLOBALS[$class]->output);
             for ($i = 0; $i < $size; $i++) {
 //              if ($GLOBALS[$class]->code == 'ot_tax' || $GLOBALS[$class]->code == 'ot_shipping' || $GLOBALS[$class]->code == 'ot_subtotal') {
-              if ($GLOBALS[$class]->code == 'ot_tax') {
+              if ($GLOBALS[$class]->code == 'ot_tax' && DISPLAY_PRICE_WITH_TAX == 'false') {
                 $source_items[] = [
                   'type' => substr($GLOBALS[$class]->code, 3),
                   'currency' => $currency,
@@ -364,16 +371,16 @@ class stripe_klarna extends abstract_payment_module {
                   'description' => $GLOBALS[$class]->output[$i]['title']
                 ];
                 $charges += $GLOBALS[$class]->output[$i]['value'];
-              } elseif ($GLOBALS[$class]->code == 'ot_shipping') {
-              //  $ship = $GLOBALS['shipping']['cost'];
-                $ship = $GLOBALS[$class]->output[$i]['value'];
+              } elseif ($GLOBALS[$class]->code == 'ot_shipping' || in_array($GLOBALS[$class]->code, $discounts)) {
+              //  $ot_val = $GLOBALS['shipping']['cost'];
+                $ot_val = $GLOBALS[$class]->output[$i]['value'];
                 $source_items[] = [
                   'type' => substr($GLOBALS[$class]->code, 3),
                   'currency' => $currency,
-                  'amount' => $this->format_raw($ship),
+                  'amount' => $this->format_raw($ot_val),
                   'description' => $GLOBALS[$class]->output[$i]['title']
                 ];
-                $charges += $ship;
+                $charges += $ot_val;
               }
             }
           }
@@ -392,7 +399,11 @@ class stripe_klarna extends abstract_payment_module {
       }
     }
 
-    $caught_error = '';
+    if (abs($charges - $GLOBALS['order']->info['total']) > 0.01) {
+      $caught_error = sprintf(MODULE_PAYMENT_STRIPE_KLARNA_ERROR_TOTAL, $charges, $GLOBALS['order']->info['total']);
+    } else {
+      $caught_error = '';
+    }
 
     if (!isset($_SESSION['stripe_source_id'])) {
 
@@ -941,48 +952,6 @@ EOS;
       return $error;
     }
 
- /*   function check() {
-      if (!isset($this->_check)) {
-        $check_query = tep_db_query("select configuration_value from configuration where configuration_key = 'MODULE_PAYMENT_STRIPE_KLARNA_STATUS'");
-        $this->_check = tep_db_num_rows($check_query);
-      }
-      return $this->_check;
-    }
-
-    function install($parameter = null) {
-      $params = $this->getParams();
-
-      if (isset($parameter)) {
-        if (isset($params[$parameter])) {
-          $params = array($parameter => $params[$parameter]);
-        } else {
-          $params = array();
-        }
-      }
-
-      foreach ($params as $key => $data) {
-        $sql_data_array = [
-          'configuration_title' => $data['title'],
-          'configuration_key' => $key,
-          'configuration_value' => (isset($data['value']) ? $data['value'] : ''),
-          'configuration_description' => $data['desc'],
-          'configuration_group_id' => '6',
-          'sort_order' => '0',
-          'date_added' => 'now()'
-        ];
-
-        if (isset($data['set_func'])) {
-            $sql_data_array['set_function'] = $data['set_func'];
-        }
-
-        if (isset($data['use_func'])) {
-            $sql_data_array['use_function'] = $data['use_func'];
-        }
-
-        tep_db_perform("configuration", $sql_data_array);
-      }
-    } */
-
     function event_log($customer_id, $action, $request, $response) {
       if (MODULE_PAYMENT_STRIPE_KLARNA_LOG == "True") {
         tep_db_query("insert into stripe_event_log (customer_id, action, request, response, date_added) values ('" . $customer_id . "', '" . $action . "', '" . tep_db_input($request) . "', '" . tep_db_input($response) . "', now())");
@@ -1141,6 +1110,11 @@ EOD;
           'value' => '0',
           'use_func' => 'tep_get_zone_class_title',
           'set_func' => 'tep_cfg_pull_down_zone_classes('
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_DISCOUNT_MODULES' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_DISCOUNT_MOD_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_DISCOUNT_MOD_DESC,
+          'value' => '',
         ],
         'MODULE_PAYMENT_STRIPE_KLARNA_EVENT_NUMBER' => [
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_TITLE,
