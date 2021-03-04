@@ -9,8 +9,9 @@
 * author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
 * copyright (c) 2020 SEwebsites
 *
-* released under MIT licence without warranty express or implied
-*
+* released under SE Websites Commercial licence
+* without warranty express or implied
+* DISTRIBUTION RESTRICTED see se-websites-commercial-licence.txt
 ****************************************************************/
 
 class hook_shop_siteWide_klarna_hook

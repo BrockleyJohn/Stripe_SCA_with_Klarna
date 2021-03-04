@@ -1,0 +1,51 @@
+SE Websites Commercial Software Licence Agreement
+-------------------------------------------------
+Version 1.0 11-02-2021
+
+This End-User Licensing Agreement, including any supplemental terms (collectively the "EULA") is between You and John Ferguson Trading As SE Websites (hearafter "SE Websites").
+If you do not wish to be bound by its terms, you may not use the software and must delete it.
+
+Standard Licence
+----------------
+What you can do:
+- use the software on your website
+- use the software on additional development/test versions of your website
+- make backup copies as required
+- adapt, change and extend the software to fit your website
+- make a one-off transfer of your licence (e.g. buy the software when building a single site for a client and charge them for it)
+
+What you can't do:
+- publish the software openly (e.g. on github or the oscommerce apps area) either on its own or as part of a larger addon or your site
+- use the software on more than one production site (get a multi-site or extended licence)
+- resell additional copies of the software or incorporate it into addons or templates that you sell (get an extended licence)
+- retain a copy of the software if you transfer it
+
+Multi-site Licence
+------------------
+What you can do:
+- everything in the standard licence plus:
+- use the software on multiple sites which serve the same company
+
+What you can't do:
+- use the software on multiple sites for different clients (get an extended licence)
+
+Extended Licences
+-----------------
+Are tailored individually and may give permission to resell the software, incorporate and extend it for resale or use it on multiple client sites.
+
+Term of Agreement
+-----------------
+This EULA is effective from the date you install the software. You may terminate this agreement at any time by permanently deleting all copies of the software, including backup copies.
+SE Websites or its licensors may terminate this EULA at any time without notice if you fail to comply with any terms or conditions of this agreement.
+Once it is terminated you must stop using this software and delete all the software and associated materials and any copies immediately.
+
+Warranty Disclaimer and Limit Of Liability
+------------------------------------------
+You acknowledge that the software is sold 'as-is' without warranty express or implied, including but not limited to the warranties of merchantability, satisfactory qualty, fitness for a particular purpose, accuracy.
+There is no warranty from SE Websites that the functions of the software will meet your requirements or that the operation of the software will be uninterrupted or error-free.
+SE Websites won't be held liable for incidental, special or consequential damages so far as the law allows. No liability is accepted beyond the price paid for it. 
+You assume all responsibility and risk for the selection of the software and its application.
+
+Governing Law
+-------------
+This agreement, and any dispute, controversy, proceedings or claim of whatever nature arising out of or in any way relating to this agreement or its formation (including any non-contractual disputes or claims), shall be governed by and construed in accordance with English law.

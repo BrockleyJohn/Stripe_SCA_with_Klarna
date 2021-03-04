@@ -9,8 +9,9 @@
   author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
 
   Copyright (c) 2020 SE websites
-
-  Released under MIT License without warranty express or implied
+* released under SE Websites Commercial licence
+* without warranty express or implied
+* DISTRIBUTION RESTRICTED see se-websites-commercial-licence.txt
  */
 
 require_once dirname(dirname(dirname(__FILE__))) . '/apps/stripe_sca/init.php';
