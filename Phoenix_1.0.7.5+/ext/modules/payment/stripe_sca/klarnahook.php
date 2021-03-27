@@ -1,17 +1,18 @@
 <?php
-/***************************************************************
-*
-* webhook to go with Stripe-Klarna payment module
-* Klarna source / charge handling is async so lots of processing
-* is handled here as a result of callbacks
-*
-* version 0.1 September 2020
-* author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
-* copyright (c) 2020 SEwebsites
-*
-* released under MIT licence without warranty express or implied
-*
-****************************************************************/
+/**
+
+  webhook to go with Stripe-Klarna payment module
+  Klarna source / charge handling is async so lots of processing
+  is handled here as a result of callbacks
+ 
+  version 0.1 September 2020
+  author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
+  copyright (c) 2020 SEwebsites
+
+* released under SE Websites Commercial licence
+* without warranty express or implied
+* DISTRIBUTION RESTRICTED see se-websites-commercial-licence.txt
+*****************************************************************/
 
 function jTraceEx($e, $seen=null) {
     $starter = $seen ? 'Caused by: ' : '';

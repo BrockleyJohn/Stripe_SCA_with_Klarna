@@ -1,20 +1,31 @@
 <?php
-/***************************************************************
-*
-* langauge definitions for Stripe-Klarna payment module
-*
-* version 0.1 September 2020
-* author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
-* copyright (c) 2020 SEwebsites
-*
-* released under MIT licence without warranty express or implied
-*
-****************************************************************/
+/**
+
+  langauge definitions for Stripe-Klarna payment module
+ 
+  version 1.1 March 2021
+
+  author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
+  copyright (c) 2020 SEwebsites
+ 
+* released under SE Websites Commercial licence
+* without warranty express or implied
+* DISTRIBUTION RESTRICTED see se-websites-commercial-licence.txt
+*****************************************************************/
 
 // module
   define('MODULE_PAYMENT_STRIPE_KLARNA_TEXT_TITLE', 'Klarna via Stripe');
   define('MODULE_PAYMENT_STRIPE_KLARNA_TEXT_PUBLIC_TITLE', 'Buy now pay later with Klarna');
   define('MODULE_PAYMENT_STRIPE_KLARNA_TEXT_DESCRIPTION', 'Klarna payments as a Stripe Source');
+
+// email texts
+  define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_SUBJECT', 'Klarna setup failed - order not placed');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_TEXT', "Dear %s,\n\nSorry but there was a problem setting up the Klarna payment arrangement for order %s. Please contact us to make alternative arrangements to pay.");
+
+  define('MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_INTRO', 'Thanks for your order.');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED','Klarna payment confirmed - order accepted');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_TEXT_INVOICE_URL', 'Order details:');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_CODA', 'If you have any questions about your order or payments please contact us.');
 
 // module-specific order statuses
   define('MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_TEXT', 'Preparing [Stripe Klarna]');
@@ -87,10 +98,6 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_CHARGE_FAIL', 'FAIL: Klarna charge failed %s %s');
   define('MODULE_PAYMENT_STRIPE_KLARNA_MISMATCH_ORDER_CUSTOMER', 'Klarna charge succeeded but order %s customer %s not matched');
   define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_INCOMPLETE','Order placed subject to confirmation from Klarna. Check your emails or the order status in your account.');
-  define('MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED','Klarna payment confirmed - order accepted');
-  define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_SUBJECT', 'Klarna setup failed - order not placed');
-  define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_TEXT', "Dear %s,\n\nSorry but there was a problem setting up the Klarna payment arrangement for order %s. Please contact us to make alternative arrangements to pay.");
-  define('MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_TEXT_INVOICE_URL', 'Order details:');
 
 // connection test
   define('MODULE_PAYMENT_STRIPE_KLARNA_DIALOG_CONNECTION_LINK_TITLE', 'Test API Server Connection');

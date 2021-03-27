@@ -1,17 +1,18 @@
 <?php 
-/***************************************************************
-*
-* hook to go with payment module
-* Klarna processing is async so push back some processing
-* as late as possible and run in checkout success
-*
-* version 0.1 September 2020
-* author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
-* copyright (c) 2020 SEwebsites
-*
-* released under MIT licence without warranty express or implied
-*
-****************************************************************/
+/**
+
+  hook to go with payment module
+  Klarna processing is async so push back some processing
+  as late as possible and run in checkout success
+ 
+  version 0.1 September 2020
+  author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
+  copyright (c) 2020 SEwebsites
+ 
+* released under SE Websites Commercial licence
+* without warranty express or implied
+* DISTRIBUTION RESTRICTED see se-websites-commercial-licence.txt
+*****************************************************************/
 
 class hook_shop_siteWide_klarna_hook
 {

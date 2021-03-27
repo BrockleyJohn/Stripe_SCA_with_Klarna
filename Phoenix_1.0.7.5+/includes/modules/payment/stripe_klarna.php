@@ -1,8 +1,8 @@
 <?php
 
-/*
+/**
   This version: targets phoenix 10.7.5 which is intermediate
-  - so there are some workarounds (eg. define tep_address_format)
+  v1.1 use customer data modules for address
   
   Klarna via Stripe (payment sources)
   
@@ -10,8 +10,10 @@
 
   Copyright (c) 2020 SE websites
 
-  Released under MIT License without warranty express or implied
- */
+* released under SE Websites Commercial licence
+* without warranty express or implied
+* DISTRIBUTION RESTRICTED see se-websites-commercial-licence.txt
+*****************************************************************/
 
 require_once dirname(dirname(dirname(__FILE__))) . '/apps/stripe_sca/init.php';
 
@@ -807,7 +809,9 @@ EOS;
         }
 
 // lets start with the email confirmation
-        $email_order = STORE_NAME . "\n" .
+        $email_order = 
+                MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_INTRO . "\n\n" .
+                STORE_NAME . "\n" .
                 MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
                 MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED . "\n" .
                 MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
@@ -825,23 +829,23 @@ EOS;
         for ($i = 0, $n = sizeof($order->totals); $i < $n; $i++) {
             $email_order .= strip_tags($order->totals[$i]['title']) . ' ' . strip_tags($order->totals[$i]['text']) . "\n";
         }
+        
+        $addr_mod = Guarantor::ensure_global('customer_data')->get_module('address');
 
         if ($order->content_type != 'virtual') {
             $email_order .= "\n" . MODULE_NOTIFICATIONS_CHECKOUT_TEXT_DELIVERY_ADDRESS . "\n" .
                     MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
-                     tep_address_format($order->delivery['format_id'], $order->delivery, false, '', "\n") . "\n";
+                    $addr_mod->format($order->delivery, false, '', "\n") . "\n";
         }
 
         $email_order .= "\n" . MODULE_NOTIFICATIONS_CHECKOUT_TEXT_BILLING_ADDRESS . "\n" .
                 MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
-                tep_address_format($order->billing['format_id'], $order->billing, false, '', "\n") . "\n\n";
+                $addr_mod->format($order->billing, false, '', "\n") . "\n\n";
 
         $email_order .= MODULE_NOTIFICATIONS_CHECKOUT_TEXT_PAYMENT_METHOD . "\n" .
                 MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n";
         $email_order .= $this->title . "\n\n";
-        if ($this->email_footer) {
-            $email_order .= $this->email_footer . "\n\n";
-        }
+        $email_order .= MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_CODA . "\n\n";
 
         tep_mail($order->customer['name'], $order->customer['email_address'], MODULE_NOTIFICATIONS_CHECKOUT_TEXT_SUBJECT, $email_order, STORE_OWNER, STORE_OWNER_EMAIL_ADDRESS);
 
@@ -1317,21 +1321,21 @@ if (! function_exists('tep_address_format')) {
     $address_format_query = tep_db_query("select address_format as format from address_format where address_format_id = '" . (int)$address_format_id . "'");
     $address_format = tep_db_fetch_array($address_format_query);
 
-    $company = tep_output_string_protected($address['company']);
+    $company = htmlspecialchars($address['company']);
     if (isset($address['firstname']) && tep_not_null($address['firstname'])) {
-      $firstname = tep_output_string_protected($address['firstname']);
-      $lastname = tep_output_string_protected($address['lastname']);
+      $firstname = htmlspecialchars($address['firstname']);
+      $lastname = htmlspecialchars($address['lastname']);
     } elseif (isset($address['name']) && tep_not_null($address['name'])) {
-      $firstname = tep_output_string_protected($address['name']);
+      $firstname = htmlspecialchars($address['name']);
       $lastname = '';
     } else {
       $firstname = '';
       $lastname = '';
     }
-    $street = tep_output_string_protected($address['street_address']);
-    $suburb = tep_output_string_protected($address['suburb']);
-    $city = tep_output_string_protected($address['city']);
-    $state = tep_output_string_protected($address['state']);
+    $street = htmlspecialchars($address['street_address']);
+    $suburb = htmlspecialchars($address['suburb']);
+    $city = htmlspecialchars($address['city']);
+    $state = htmlspecialchars($address['state']);
     if (isset($address['country_id']) && tep_not_null($address['country_id'])) {
       $country = tep_get_country_name($address['country_id']);
 
@@ -1339,11 +1343,11 @@ if (! function_exists('tep_address_format')) {
         $state = tep_get_zone_code($address['country_id'], $address['zone_id'], $state);
       }
     } elseif (isset($address['country']) && tep_not_null($address['country'])) {
-      $country = tep_output_string_protected($address['country']['title']);
+      $country = htmlspecialchars($address['country']['title']);
     } else {
       $country = '';
     }
-    $postcode = tep_output_string_protected($address['postcode']);
+    $postcode = htmlspecialchars($address['postcode']);
     $zip = $postcode;
 
     if ($html) {
