@@ -1,14 +1,14 @@
 <?php
 
 /**
-  This version: targets phoenix 10.7.5 which is intermediate
+  This version: targets phoenix 1.0.8.0+ 
   v1.1 use customer data modules for address
   
   Klarna via Stripe (payment sources)
   
-  author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
+  author: John Ferguson @BrockleyJohn phoenix@sewebsites.net
 
-  Copyright (c) 2020 SE websites
+  Copyright (c) 2021 SE websites
 
 * released under SE Websites Commercial licence
 * without warranty express or implied
@@ -218,26 +218,30 @@ class stripe_klarna extends abstract_payment_module {
                     }
                 }
 
-                $sql_data_array = array('orders_id' => $insert_id,
-                    'orders_status_id' => $order->info['order_status'],
-                    'date_added' => 'now()',
-                    'customer_notified' => '',
-                    'comments' => $order->info['comments']);
-                tep_db_perform('orders_status_history', $sql_data_array);
-              
-                for ($i = 0, $n = sizeof($order->products); $i < $n; $i++) {
-                    $sql_data_array = array('orders_id' => $insert_id,
-                        'products_id' => tep_get_prid($order->products[$i]['id']),
-                        'products_model' => $order->products[$i]['model'],
-                        'products_name' => $order->products[$i]['name'],
-                        'products_price' => $order->products[$i]['price'],
-                        'final_price' => $order->products[$i]['final_price'],
-                        'products_tax' => $order->products[$i]['tax'],
-                        'products_quantity' => $order->products[$i]['qty']);
+        $sql_data_array = [
+          'orders_id' => $insert_id,
+          'orders_status_id' => $order->info['order_status'],
+          'date_added' => 'now()',
+          'customer_notified' => '',
+          'comments' => $order->info['comments']
+        ];
+        tep_db_perform('orders_status_history', $sql_data_array);
 
-                    tep_db_perform("orders_products", $sql_data_array);
-                  
-                    $order_products_id = tep_db_insert_id();
+        for ($i = 0, $n = sizeof($order->products); $i < $n; $i++) {
+          $sql_data_array = [
+            'orders_id' => $insert_id,
+            'products_id' => tep_get_prid($order->products[$i]['id']),
+            'products_model' => $order->products[$i]['model'],
+            'products_name' => $order->products[$i]['name'],
+            'products_price' => $order->products[$i]['price'],
+            'final_price' => $order->products[$i]['final_price'],
+            'products_tax' => $order->products[$i]['tax'],
+            'products_quantity' => $order->products[$i]['qty']
+          ];
+
+          tep_db_perform("orders_products", $sql_data_array);
+
+          $order_products_id = tep_db_insert_id();
 
                     $attributes_exist = '0';
                     if (isset($order->products[$i]['attributes'])) {
@@ -338,35 +342,56 @@ class stripe_klarna extends abstract_payment_module {
       ];
 
       $source_items = [];
+      $charges = 0;
 
     for ($i = 0, $n = sizeof($GLOBALS['order']->products); $i < $n; $i++) {
 
       $source_items[] = [
         'type' => 'sku',
         'currency' => $_SESSION['currency'],
-        'amount' => $this->format_raw($GLOBALS['order']->products[$i]['final_price'] * $GLOBALS['order']->products[$i]['qty']),
+        'amount' => $this->format_raw((DISPLAY_PRICE_WITH_TAX == 'true' ? tep_add_tax($order->products[$i]['final_price'], $order->products[$i]['tax']) : $GLOBALS['order']->products[$i]['final_price']) * $GLOBALS['order']->products[$i]['qty']),
         'description' => $GLOBALS['order']->products[$i]['name'],
         'quantity' => $GLOBALS['order']->products[$i]['qty'],
       ];
+      $charges += (DISPLAY_PRICE_WITH_TAX == 'true' ? tep_add_tax($order->products[$i]['final_price'], $order->products[$i]['tax']) : $GLOBALS['order']->products[$i]['final_price']) * $order->products[$i]['qty'];
     }
     if (is_array($GLOBALS['order_total_modules']->modules)) {
+      $discounts = [];
+      if (defined('MODULE_PAYMENT_STRIPE_KLARNA_DISCOUNT_MODULES') && strlen(MODULE_PAYMENT_STRIPE_KLARNA_DISCOUNT_MODULES)) {
+        $ds = explode(',', MODULE_PAYMENT_STRIPE_KLARNA_DISCOUNT_MODULES);
+        foreach ($ds as $d) {
+          $discounts[] = trim($d);
+        }
+      }
       foreach ($GLOBALS['order_total_modules']->modules as $value) {
-        $class = substr($value, 0, strrpos($value, '.'));
-        if ($GLOBALS[$class]->enabled) {
-          $size = sizeof($GLOBALS[$class]->output);
-          for ($i = 0; $i < $size; $i++) {
-            if ($GLOBALS[$class]->code == 'ot_tax' || $GLOBALS[$class]->code == 'ot_shipping') {
-              $source_items[] = [
-                'type' => substr($GLOBALS[$class]->code, 3),
-                'currency' => $currency,
-                'amount' => $this->format_raw($GLOBALS[$class]->output[$i]['value']),
-                'description' => $GLOBALS[$class]->output[$i]['title']
-              ];
+          $class = substr($value, 0, strrpos($value, '.'));
+          if ($GLOBALS[$class]->enabled) {
+            $size = sizeof($GLOBALS[$class]->output);
+            for ($i = 0; $i < $size; $i++) {
+//              if ($GLOBALS[$class]->code == 'ot_tax' || $GLOBALS[$class]->code == 'ot_shipping' || $GLOBALS[$class]->code == 'ot_subtotal') {
+              if ($GLOBALS[$class]->code == 'ot_tax' && DISPLAY_PRICE_WITH_TAX == 'false') {
+                $source_items[] = [
+                  'type' => substr($GLOBALS[$class]->code, 3),
+                  'currency' => $currency,
+                  'amount' => $this->format_raw($GLOBALS[$class]->output[$i]['value']),
+                  'description' => $GLOBALS[$class]->output[$i]['title']
+                ];
+                $charges += $GLOBALS[$class]->output[$i]['value'];
+              } elseif ($GLOBALS[$class]->code == 'ot_shipping' || in_array($GLOBALS[$class]->code, $discounts)) {
+              //  $ot_val = $GLOBALS['shipping']['cost'];
+                $ot_val = $GLOBALS[$class]->output[$i]['value'];
+                $source_items[] = [
+                  'type' => substr($GLOBALS[$class]->code, 3),
+                  'currency' => $currency,
+                  'amount' => $this->format_raw($ot_val),
+                  'description' => $GLOBALS[$class]->output[$i]['title']
+                ];
+                $charges += $ot_val;
+              }
             }
           }
         }
       }
-    }
 
     // have to create source before loading the javascript because it needs the source id - first make sure it's up to date if we already have one
     if (isset($_SESSION['stripe_source_id'])) {
@@ -380,7 +405,11 @@ class stripe_klarna extends abstract_payment_module {
       }
     }
 
-    $caught_error = '';
+    if (abs($charges - $GLOBALS['order']->info['total']) > 0.01) {
+      $caught_error = sprintf(MODULE_PAYMENT_STRIPE_KLARNA_ERROR_TOTAL, $charges, $GLOBALS['order']->info['total']);
+    } else {
+      $caught_error = '';
+    }
 
     if (!isset($_SESSION['stripe_source_id'])) {
 
@@ -388,7 +417,8 @@ class stripe_klarna extends abstract_payment_module {
         $params['source_order']['items'] = $source_items;
       }
       $params['type'] = 'klarna';
-      $params['amount'] = $this->format_raw($GLOBALS['order']->info['total']);
+//        $params['amount'] = $this->format_raw($order->info['total']);
+      $params['amount'] = $this->format_raw($charges);
       $params['currency'] = $_SESSION['currency'];
       $params['metadata'] = $metadata;
       $params['klarna']['product'] = 'payment';
@@ -1138,6 +1168,11 @@ EOD;
           'use_func' => 'tep_get_zone_class_title',
           'set_func' => 'tep_cfg_pull_down_zone_classes('
         ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_DISCOUNT_MODULES' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_DISCOUNT_MOD_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_DISCOUNT_MOD_DESC,
+          'value' => '',
+        ],
         'MODULE_PAYMENT_STRIPE_KLARNA_EVENT_NUMBER' => [
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_TITLE,
           'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_DESC,
@@ -1331,78 +1366,3 @@ EOD;
     }
 
 }
-/*
-// middling phoenix 1.7. versions aren't all there
-if (! function_exists('tep_address_format')) {
-////
-// Return a formatted address
-// TABLES: address_format
-  function tep_address_format($address_format_id, $address, $html, $boln, $eoln) {
-    $address_format_query = tep_db_query("select address_format as format from address_format where address_format_id = '" . (int)$address_format_id . "'");
-    $address_format = tep_db_fetch_array($address_format_query);
-
-    $company = htmlspecialchars($address['company']);
-    if (isset($address['firstname']) && tep_not_null($address['firstname'])) {
-      $firstname = htmlspecialchars($address['firstname']);
-      $lastname = htmlspecialchars($address['lastname']);
-    } elseif (isset($address['name']) && tep_not_null($address['name'])) {
-      $firstname = htmlspecialchars($address['name']);
-      $lastname = '';
-    } else {
-      $firstname = '';
-      $lastname = '';
-    }
-    $street = htmlspecialchars($address['street_address']);
-    $suburb = htmlspecialchars($address['suburb']);
-    $city = htmlspecialchars($address['city']);
-    $state = htmlspecialchars($address['state']);
-    if (isset($address['country_id']) && tep_not_null($address['country_id'])) {
-      $country = tep_get_country_name($address['country_id']);
-
-      if (isset($address['zone_id']) && tep_not_null($address['zone_id'])) {
-        $state = tep_get_zone_code($address['country_id'], $address['zone_id'], $state);
-      }
-    } elseif (isset($address['country']) && tep_not_null($address['country'])) {
-      $country = htmlspecialchars($address['country']['title']);
-    } else {
-      $country = '';
-    }
-    $postcode = htmlspecialchars($address['postcode']);
-    $zip = $postcode;
-
-    if ($html) {
-// HTML Mode
-      $HR = '<hr />';
-      $hr = '<hr />';
-      if ( ($boln == '') && ($eoln == "\n") ) { // Values not specified, use rational defaults
-        $CR = '<br />';
-        $cr = '<br />';
-        $eoln = $cr;
-      } else { // Use values supplied
-        $CR = $eoln . $boln;
-        $cr = $CR;
-      }
-    } else {
-// Text Mode
-      $CR = $eoln;
-      $cr = $CR;
-      $HR = '----------------------------------------';
-      $hr = '----------------------------------------';
-    }
-
-    $statecomma = '';
-    $streets = $street;
-    if ($suburb != '') $streets = $street . $cr . $suburb;
-    if ($state != '') $statecomma = $state . ', ';
-
-    $fmt = $address_format['format'];
-    eval("\$address = \"$fmt\";");
-
-    if ( (ACCOUNT_COMPANY == 'true') && (tep_not_null($company)) ) {
-      $address = $company . $cr . $address;
-    }
-
-    return $address;
-  }
-}
-*/

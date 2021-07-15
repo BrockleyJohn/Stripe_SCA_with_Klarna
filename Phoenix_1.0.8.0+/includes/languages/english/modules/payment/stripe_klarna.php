@@ -1,7 +1,7 @@
 <?php
 /**
 
-  langauge definitions for Stripe-Klarna payment module
+  language definitions for Stripe-Klarna payment module
  
   version 1.1 March 2021
 
@@ -68,6 +68,8 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TRANSACTION_DESC', 'Include transaction information in this order status level');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_ZONE_TITLE', 'Payment Zone');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_ZONE_DESC', 'If a zone is selected, only enable this payment method for that zone.');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_DISCOUNT_MOD_TITLE', 'Discount Modules');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_DISCOUNT_MOD_DESC', 'Comma separated list of discount classes, e.g. ot_discount, ot_coupon');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_TITLE', 'Event limit');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_DESC', 'The number of events to fetch when trying to get the last error for the customer - may need increasing on busier stores');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_PROXY_TITLE', 'Proxy Server');
@@ -91,6 +93,7 @@
 
   define('MODULE_PAYMENT_STRIPE_KLARNA_ERROR_TITLE', 'There has been an error setting up Klarna payments');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ERROR_GENERAL', 'Please try again and if problems persist, please try another payment method.');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_ERROR_TOTAL', 'Configuration error - charge total %s does not match order total %s');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ERROR_NOT_FOUND', 'No log of the cause was found. Please try again and if problems persist, please try another payment method.');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ERROR_SOURCE', 'Failed setting up your choice of Klarna options. Please try again and if problems persist, please try another payment method.');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ERROR_CHARGE', 'Failed setting up your choice of Klarna options. Please try again and if problems persist, please try another payment method. Error %s %s');
@@ -99,6 +102,10 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_CHARGE_FAIL', 'FAIL: Klarna charge failed %s %s');
   define('MODULE_PAYMENT_STRIPE_KLARNA_MISMATCH_ORDER_CUSTOMER', 'Klarna charge succeeded but order %s customer %s not matched');
   define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_INCOMPLETE','Order placed subject to confirmation from Klarna. Check your emails or the order status in your account.');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED','Klarna payment confirmed - order accepted');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_SUBJECT', 'Klarna setup failed - order not placed');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_TEXT', "Dear %s,\n\nSorry but there was a problem setting up the Klarna payment arrangement for order %s. Please contact us to make alternative arrangements to pay.");
+  define('MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_TEXT_INVOICE_URL', 'Order details:');
 
 // connection test
   define('MODULE_PAYMENT_STRIPE_KLARNA_DIALOG_CONNECTION_LINK_TITLE', 'Test API Server Connection');
