@@ -55,7 +55,7 @@ chdir('../../../../');
 require('includes/application_top.php');
 
 //include_once("includes/languages/{$language}/checkout_process.php");
-@include_once("includes/languages/{$language}/modules/notifications/n_checkout.php");
+include_once("includes/languages/{$language}/modules/notifications/n_checkout.php");
 if (! class_exists('stripe_klarna')) {
   require_once("includes/languages/{$language}/modules/payment/stripe_klarna.php");
   require_once('includes/modules/payment/stripe_klarna.php');

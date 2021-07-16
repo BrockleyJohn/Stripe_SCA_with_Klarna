@@ -15,7 +15,7 @@
 * DISTRIBUTION RESTRICTED see se-websites-commercial-licence.txt
 *****************************************************************/
 
-require_once dirname(dirname(dirname(__FILE__))) . '/apps/stripe_sca/init.php';
+require_once DIR_FS_CATALOG . 'includes/apps/stripe_sca/init.php';
 
 class stripe_klarna extends abstract_payment_module {
 
@@ -35,8 +35,8 @@ class stripe_klarna extends abstract_payment_module {
   ];
 
   protected $intent;
-  private $signature = 'stripe|stripe_klarna|1.0.16|1.0.8.0';
-  private $api_version = '2020-08-27';
+  public $signature = 'stripe|stripe_klarna|1.0.16|1.0.8.0';
+  public $api_version = '2020-08-27';
 
   function __construct() {
     global $PHP_SELF, $order, $payment;
@@ -471,7 +471,7 @@ EOS;
           else { $class = 'col-12'; }
           $karna_divs .= '<div class="' . $class . '"><div class="klarna-option"><div class="klarna-option-hdr">';
           if (array_key_exists($cat, $k_opts)) {
-            $karna_divs .= ($count > 1 ? tep_draw_radio_field('klarna_option', $cat, false, 'id="klarna_' . $cat . '_option" required="required" class="custom-control-input"') : tep_draw_hidden_field('klarna_option', $cat, 'id="klarna_' . $cat . '_option"')) . ' ' . $k_opts[$cat];
+            $karna_divs .= ($count > 1 ? tep_draw_radio_field('klarna_option', $cat, false, 'id="klarna_' . $cat . '_option" required="required" class="form-control-inline"') : tep_draw_hidden_field('klarna_option', $cat, 'id="klarna_' . $cat . '_option"')) . ' ' . $k_opts[$cat];
           }
           $karna_divs .= '</div><div id="klarna_' . $cat . '_container"></div></div></div>';
         }
@@ -1366,3 +1366,78 @@ EOD;
     }
 
 }
+/*
+// middling phoenix 1.7. versions aren't all there
+if (! function_exists('tep_address_format')) {
+////
+// Return a formatted address
+// TABLES: address_format
+  function tep_address_format($address_format_id, $address, $html, $boln, $eoln) {
+    $address_format_query = tep_db_query("select address_format as format from address_format where address_format_id = '" . (int)$address_format_id . "'");
+    $address_format = tep_db_fetch_array($address_format_query);
+
+    $company = htmlspecialchars($address['company']);
+    if (isset($address['firstname']) && tep_not_null($address['firstname'])) {
+      $firstname = htmlspecialchars($address['firstname']);
+      $lastname = htmlspecialchars($address['lastname']);
+    } elseif (isset($address['name']) && tep_not_null($address['name'])) {
+      $firstname = htmlspecialchars($address['name']);
+      $lastname = '';
+    } else {
+      $firstname = '';
+      $lastname = '';
+    }
+    $street = htmlspecialchars($address['street_address']);
+    $suburb = htmlspecialchars($address['suburb']);
+    $city = htmlspecialchars($address['city']);
+    $state = htmlspecialchars($address['state']);
+    if (isset($address['country_id']) && tep_not_null($address['country_id'])) {
+      $country = tep_get_country_name($address['country_id']);
+
+      if (isset($address['zone_id']) && tep_not_null($address['zone_id'])) {
+        $state = tep_get_zone_code($address['country_id'], $address['zone_id'], $state);
+      }
+    } elseif (isset($address['country']) && tep_not_null($address['country'])) {
+      $country = htmlspecialchars($address['country']['title']);
+    } else {
+      $country = '';
+    }
+    $postcode = htmlspecialchars($address['postcode']);
+    $zip = $postcode;
+
+    if ($html) {
+// HTML Mode
+      $HR = '<hr />';
+      $hr = '<hr />';
+      if ( ($boln == '') && ($eoln == "\n") ) { // Values not specified, use rational defaults
+        $CR = '<br />';
+        $cr = '<br />';
+        $eoln = $cr;
+      } else { // Use values supplied
+        $CR = $eoln . $boln;
+        $cr = $CR;
+      }
+    } else {
+// Text Mode
+      $CR = $eoln;
+      $cr = $CR;
+      $HR = '----------------------------------------';
+      $hr = '----------------------------------------';
+    }
+
+    $statecomma = '';
+    $streets = $street;
+    if ($suburb != '') $streets = $street . $cr . $suburb;
+    if ($state != '') $statecomma = $state . ', ';
+
+    $fmt = $address_format['format'];
+    eval("\$address = \"$fmt\";");
+
+    if ( (ACCOUNT_COMPANY == 'true') && (tep_not_null($company)) ) {
+      $address = $company . $cr . $address;
+    }
+
+    return $address;
+  }
+}
+*/

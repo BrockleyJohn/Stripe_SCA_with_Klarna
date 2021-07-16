@@ -13,12 +13,12 @@ trait cartmart_cfg_helper {
 
   protected static function base_name($suffix)
   {
-    return static::CONFIG_KEY_BASE . $suffix;
+    return self::CONFIG_KEY_BASE . $suffix;
   }
   
   protected static function get_base_constant($suffix) 
   {
-    return defined(static::CONFIG_KEY_BASE . $suffix) ? constant(static::CONFIG_KEY_BASE . $suffix) : null;
+    return defined(self::CONFIG_KEY_BASE . $suffix) ? constant(self::CONFIG_KEY_BASE . $suffix) : null;
   }
 
   protected static function get_code()

@@ -85,7 +85,7 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_PAY_LATER','Pay later');
   define('MODULE_PAYMENT_STRIPE_KLARNA_PAY_OVER_TIME','Pay in instalments');
   
-// error messages and email
+// error messages 
   define('MODULE_PAYMENT_STRIPE_KLARNA_CLIENT_CREATE_ERROR', 'Cannot create API client. If the problem persists please choose another payment method');
   define('MODULE_PAYMENT_STRIPE_KLARNA_WEBHOOK_PARAMETER', 'Unexpected parameter value received');
   define('MODULE_PAYMENT_STRIPE_KLARNA_SECRET_ERROR', 'Invalid webhook signing secret');
@@ -102,10 +102,6 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_CHARGE_FAIL', 'FAIL: Klarna charge failed %s %s');
   define('MODULE_PAYMENT_STRIPE_KLARNA_MISMATCH_ORDER_CUSTOMER', 'Klarna charge succeeded but order %s customer %s not matched');
   define('MODULE_PAYMENT_STRIPE_KLARNA_TRAN_INCOMPLETE','Order placed subject to confirmation from Klarna. Check your emails or the order status in your account.');
-  define('MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED','Klarna payment confirmed - order accepted');
-  define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_SUBJECT', 'Klarna setup failed - order not placed');
-  define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_TEXT', "Dear %s,\n\nSorry but there was a problem setting up the Klarna payment arrangement for order %s. Please contact us to make alternative arrangements to pay.");
-  define('MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_TEXT_INVOICE_URL', 'Order details:');
 
 // connection test
   define('MODULE_PAYMENT_STRIPE_KLARNA_DIALOG_CONNECTION_LINK_TITLE', 'Test API Server Connection');
