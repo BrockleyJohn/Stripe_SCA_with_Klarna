@@ -111,6 +111,13 @@ class stripe_klarna extends abstract_payment_module {
     global $order, $customer_id, $languages_id, $currencies, $currency, $stripe_source_id, $order_total_modules, $shipping, $insert_id, $klarna_error;
 
     if (isset($_SESSION['cartID'])) {
+
+      try {
+        $stripe = new \Stripe\StripeClient($this->secret_key);
+      } catch (Exception $err) {
+        return ['title' => MODULE_PAYMENT_STRIPE_KLARNA_CLIENT_CREATE_ERROR];
+      }
+
       $insert_order = false;
 
       if (isset($_SESSION['cart_Stripe_Klarna_ID'])) {
@@ -193,16 +200,16 @@ class stripe_klarna extends abstract_payment_module {
           'currency_value' => $order->info['currency_value']
         ];
 
-                tep_db_perform("orders", $sql_data_array);
+        tep_db_perform("orders", $sql_data_array);
 
-                $insert_id = tep_db_insert_id();
+        $insert_id = tep_db_insert_id();
 
-                if (is_array($order_total_modules->modules)) {
-                    foreach ($order_total_modules->modules as $value) {
-                        $class = substr($value, 0, strrpos($value, '.'));
-                        if ($GLOBALS[$class]->enabled) {
-                            $size = sizeof($GLOBALS[$class]->output);
-                            for ($i = 0; $i < $size; $i++) {
+        if (is_array($order_total_modules->modules)) {
+          foreach ($order_total_modules->modules as $value) {
+            $class = substr($value, 0, strrpos($value, '.'));
+            if ($GLOBALS[$class]->enabled) {
+              $size = sizeof($GLOBALS[$class]->output);
+              for ($i = 0; $i < $size; $i++) {
                 $sql_data_array = [
                   'orders_id' => $insert_id,
                   'title' => $GLOBALS[$class]->output[$i]['title'],
@@ -212,11 +219,11 @@ class stripe_klarna extends abstract_payment_module {
                   'sort_order' => $GLOBALS[$class]->sort_order
                 ];
 
-                                tep_db_perform("orders_total", $sql_data_array);
-                            }
-                        }
-                    }
-                }
+                tep_db_perform("orders_total", $sql_data_array);
+              }
+            }
+          }
+        }
 
         $sql_data_array = [
           'orders_id' => $insert_id,
@@ -290,12 +297,6 @@ class stripe_klarna extends abstract_payment_module {
                 $order_id = $insert_id;
 
         $_SESSION['cart_Stripe_Klarna_ID'] = $_SESSION['cartID'] . '-' . $order_id;
-      }
-
-      try {
-        $stripe = new \Stripe\StripeClient($this->secret_key);
-      } catch (Exception $err) {
-        return ['title' => MODULE_PAYMENT_STRIPE_KLARNA_CLIENT_CREATE_ERROR];
       }
 
       $metadata = [
@@ -453,32 +454,37 @@ EOS;
     if (! strlen($caught_error)) {
       $content .= '<input type="hidden" id="source_id" value="' . tep_output_string($_SESSION['stripe_source_id']) . '" />' . '<input type="hidden" id="secret" value="' . tep_output_string($this->source->client_secret) . '" />';
     }
-    $karna_divs = '';
+    $klarna_divs = '';
     $k_opts = [
       'pay_later' => MODULE_PAYMENT_STRIPE_KLARNA_PAY_LATER,
       'pay_now' => MODULE_PAYMENT_STRIPE_KLARNA_PAY_NOW,
       'pay_over_time' => MODULE_PAYMENT_STRIPE_KLARNA_PAY_OVER_TIME
     ];
     $count = 0;
+    //error_log(print_r($this->source, true));
     if (isset($this->source->klarna->payment_method_categories)) {
       $cats = explode(',', $this->source->klarna->payment_method_categories);
       $count = count($cats);
       if ($count) {
-        foreach ($cats as $cat) {
-          // frozen version:
-          if ($count > 2) { $class = 'col-sm-6 col-lg-4'; }
-          elseif ($count == 2) { $class = 'col-sm-6'; }
-          else { $class = 'col-12'; }
-          $karna_divs .= '<div class="' . $class . '"><div class="klarna-option"><div class="klarna-option-hdr">';
-          if (array_key_exists($cat, $k_opts)) {
-            $karna_divs .= ($count > 1 ? tep_draw_radio_field('klarna_option', $cat, false, 'id="klarna_' . $cat . '_option" required="required" class="form-control-inline"') : tep_draw_hidden_field('klarna_option', $cat, 'id="klarna_' . $cat . '_option"')) . ' ' . $k_opts[$cat];
+        if (MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API == 'Europe') {
+          foreach ($cats as $cat) {
+            // frozen version:
+            if ($count > 2) { $class = 'col-sm-6 col-lg-4'; }
+            elseif ($count == 2) { $class = 'col-sm-6'; }
+            else { $class = 'col-12'; }
+            $klarna_divs .= '<div class="' . $class . '"><div class="klarna-option"><div class="klarna-option-hdr">';
+            if (array_key_exists($cat, $k_opts)) {
+              $klarna_divs .= ($count > 1 ? tep_draw_radio_field('klarna_option', $cat, false, 'id="klarna_' . $cat . '_option" required="required" class="form-control-inline"') : tep_draw_hidden_field('klarna_option', $cat, 'id="klarna_' . $cat . '_option"')) . ' ' . $k_opts[$cat];
+            }
+            $klarna_divs .= '</div><div id="klarna_' . $cat . '_container"></div></div></div>';
           }
-          $karna_divs .= '</div><div id="klarna_' . $cat . '_container"></div></div></div>';
+        } else { // US API has a combined container
+          $klarna_divs .= '<div class="col-12" id="klarna-combined-container"></div>';
         }
       }
     }
 
-    $content .= '<div id="stripe_karna" class="row">' . $karna_divs . '</div><div id="klarna-errors" role="alert" class="text-danger payment-errors">' . $caught_error . '</div>';
+    $content .= '<div id="stripe_karna" class="row">' . $klarna_divs . '</div><div id="klarna-errors" role="alert" class="text-danger payment-errors">' . $caught_error . '</div>';
 
     // frozen version:
     $script = <<<EOS
@@ -500,9 +506,10 @@ EOS;
     } else {
   
       $param = (MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API == 'Europe' ? 'container: "#klarna_" + category + "_container",
-        payment_method_category: category,' : 'container: "#klarna_" + category + "_container",
+        payment_method_category: category,' : 'container: "#klarna-combined-container",
       payment_method_categories: available_categories,
       instance_id : "klarna-payments-instance-id"');
+      $no_choice = MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API == 'US' ? "return true;\n" : '';
       $script .= <<<EOS
 <script>
 let confirmBtn = document.querySelector('form[name="checkout_confirmation"] .btn-success');
@@ -554,7 +561,7 @@ window.klarnaAsyncCallback = function () {
 };
 
 function getSelectedCategory() {
-  var choices = document.getElementsByName('klarna_option');
+  {$no_choice}var choices = document.getElementsByName('klarna_option');
   var chosen;
   for (var i = 0; i < choices.length; i++) {
     if (choices.length == 1 || choices[i].checked) {
