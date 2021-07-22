@@ -2,7 +2,7 @@
 
 /**
   This version: targets phoenix 1.0.8.0+ 
-  v1.1 use customer data modules for address
+  v1.0.20 use customer data modules for address
   
   Klarna via Stripe (payment sources)
   
@@ -35,7 +35,7 @@ class stripe_klarna extends abstract_payment_module {
   ];
 
   protected $intent;
-  public $signature = 'stripe|stripe_klarna|1.0.16|1.0.8.0';
+  public $signature = 'stripe|stripe_klarna|1.0.20|1.0.8.4';
   public $api_version = '2020-08-27';
 
   function __construct() {
@@ -44,7 +44,6 @@ class stripe_klarna extends abstract_payment_module {
     parent::__construct();
     $this->public_title = MODULE_PAYMENT_STRIPE_KLARNA_TEXT_PUBLIC_TITLE;
     $this->sort_order = $this->sort_order ?? 0;
-    $this->order_status = ((int)self::get_constant('MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID') > 0) ? (int)MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_ID : 0;
 
     if (defined(static::CONFIG_KEY_BASE . 'STATUS')) {
       if ($this->base_constant('TRANSACTION_SERVER') == 'Test') {
@@ -52,7 +51,7 @@ class stripe_klarna extends abstract_payment_module {
         $this->public_title .= ' (Test)';
       }
 
-      if (basename($PHP_SELF) == 'modules.php') {
+      if (basename($PHP_SELF) == 'modules.php' && isset($_GET['module']) && $_GET['module'] == get_class($this)) {
         $this->description .= $this->getTestLinkInfo();
       }
     }
@@ -81,7 +80,7 @@ class stripe_klarna extends abstract_payment_module {
       }
     }
 
-    if ((basename($PHP_SELF) == 'modules.php') && isset($_GET['action']) && ($_GET['action'] == 'install') && isset($_GET['subaction']) && ($_GET['subaction'] == 'conntest')) {
+    if ((basename($PHP_SELF) == 'modules.php') && isset($_GET['action']) && ($_GET['action'] == 'install') && $_GET['module'] == get_class($this) && isset($_GET['subaction'])) {
       echo $this->getTestConnectionResult();
       exit;
     }
@@ -1164,7 +1163,7 @@ EOD;
         'MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID' => [
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TRANSACTION_TITLE,
           'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_TRANSACTION_DESC,
-          'value' => self::ensure_order_status('MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID', MODULE_PAYMENT_STRIPE_KLARNA_PREPARE_ORDER_STATUS_TEXT),
+          'value' => self::ensure_order_status('MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_ID', MODULE_PAYMENT_STRIPE_KLARNA_TRANSACTION_ORDER_STATUS_TEXT),
           'set_func' => 'tep_cfg_pull_down_order_statuses(',
           'use_func' => 'tep_get_order_status_name'
         ],
