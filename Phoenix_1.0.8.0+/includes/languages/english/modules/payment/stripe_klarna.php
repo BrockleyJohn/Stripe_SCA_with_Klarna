@@ -70,6 +70,8 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_ZONE_DESC', 'If a zone is selected, only enable this payment method for that zone.');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_DISCOUNT_MOD_TITLE', 'Discount Modules');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_DISCOUNT_MOD_DESC', 'Comma separated list of discount classes, e.g. ot_discount, ot_coupon');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_AUTH_TITLE', 'Authorise / Capture');
+  define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_AUTH_DESC', 'Capture charge immediately or authorise on checkout and capture later on fulfilment?');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_TITLE', 'Event limit');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_DESC', 'The number of events to fetch when trying to get the last error for the customer - may need increasing on busier stores');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_PROXY_TITLE', 'Proxy Server');

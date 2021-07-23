@@ -2,6 +2,7 @@
 
 /**
   This version: targets phoenix 1.0.8.0+ 
+  v1.0.21 add authorize/capture option
   v1.0.20 use customer data modules for address
   
   Klarna via Stripe (payment sources)
@@ -1178,6 +1179,12 @@ EOD;
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_DISCOUNT_MOD_TITLE,
           'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_DISCOUNT_MOD_DESC,
           'value' => '',
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_AUTH_CAPTURE' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_AUTH_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_AUTH_DESC,
+          'value' => 'Capture',
+          'set_func' => 'tep_cfg_select_option([\'Authorise\', \'Capture\'], '
         ],
         'MODULE_PAYMENT_STRIPE_KLARNA_EVENT_NUMBER' => [
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_TITLE,

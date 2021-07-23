@@ -106,6 +106,9 @@ if ($event->type == "source.chargeable") {
       'order_id' => $source->metadata->order_id,
     ],
   ];
+  if (defined('MODULE_PAYMENT_STRIPE_KLARNA_AUTH_CAPTURE') && MODULE_PAYMENT_STRIPE_KLARNA_AUTH_CAPTURE != 'Capture') {
+    $params['capture'] = false;
+  }
   error_log('charge params: ' . print_r($params, true));
   try {
     $stripe->charges->create($params);  
