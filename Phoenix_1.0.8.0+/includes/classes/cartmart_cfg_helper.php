@@ -2,6 +2,7 @@
 /* 
   reuse methods for configuration settings across core module hierarchies
   more on: cartmart.uk
+  version: v1.2
   author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
   date: Feb 2021
   copyright (c) SEwebsites 2021
@@ -174,6 +175,17 @@ EOD;
     return $out;
   }
   
+  protected static function unsep($val, $sep = ',') {
+    $out = [];
+    $work = explode($sep, $val);
+    foreach ($work as $bit) {
+      if (strlen(trim($bit))) {
+        $out[] = trim($bit);
+      }
+    }
+    return $out;
+  }
+
   protected static function cfg_edit_name($key)
   {
     return 'configuration[' . $key . ']';

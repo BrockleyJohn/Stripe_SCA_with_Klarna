@@ -2,9 +2,10 @@
 /**
 -
   stripe helper trait used across stripe addons
+  v1.1 add remaps to locales
   
   author: John Ferguson @BrockleyJohn phoenix@sewebsites.net
-  date: March 2021
+  date: July 2021
   copyright (c) 2021 SE Websites
   
 * released under SE Websites Commercial licence
@@ -54,6 +55,12 @@ trait cartmart_stripe_helper {
     'zh-HK',
     'zh-TW'
   ];
+
+  static $REMAP_LOCALE = [
+    'en' => [
+      'GB' => 'en-GB',
+    ],
+  ];
   
   public static function disp_key($val)
   // return the beginning of the key only
@@ -66,6 +73,9 @@ trait cartmart_stripe_helper {
     $lq = tep_db_query('SELECT * FROM languages WHERE languages_id = ' . (int)$_SESSION['languages_id']);
     if ($lr = tep_db_fetch_array($lq)) {
       if (in_array($lr['code'], self::$LOCALES)) {
+        if (isset(self::$REMAP_LOCALE[$lr['code']]) && isset(self::$REMAP_LOCALE[$lr['code']][$GLOBALS['order']->billing['country']['iso_code_2']])) {
+          return self::$REMAP_LOCALE[$lr['code']][$GLOBALS['order']->billing['country']['iso_code_2']];
+        }
         return $lr['code'];
       }
     }
@@ -125,12 +135,58 @@ trait cartmart_stripe_helper {
     $conn_link_title = $this->base_constant('DIALOG_CONNECTION_LINK_TITLE');
     $conn_link_text = $this->base_constant('DIALOG_CONNECTION_GENERAL_TEXT');
 
-    //$test_url = tep_href_link('modules.php', 'set=payment&module=' . $this->code . '&action=install&subaction=conntest'); // interim version issue encoding as &amp;
-    $test_url = tep_href_link('modules.php') . '?set=payment&module=' . $this->code . '&action=install&subaction=conntest';
+    $test_url = tep_href_link('modules.php', 'set=payment&module=' . $this->code . '&action=install&subaction=conntest');
 
     $btn = '<br/>' . self::modal_button($conn_link_title, 'connTest', 'fas fa-external-link-alt');
     self::ajax_onload_script('testConn', $test_url);
     self::modal_ajax_onload('connTest', 'testConn', $dialog_title, $dialog_button_close);
+/*
+    $js = <<<EOD
+<script>
+$(function() {
+  $('#tcdprogressbar').progressbar({
+    value: false
+  });
+});
+
+function openTestConnectionDialog() {
+  var d = $('<div>').html($('#testConnectionDialog').html()).dialog({
+    modal: true,
+    title: '{$dialog_title}',
+    buttons: {
+      '{$dialog_button_close}': function () {
+        $(this).dialog('destroy');
+      }
+    }
+  });
+
+  var timeStart = new Date().getTime();
+
+  $.ajax({
+    url: '{$test_url}'
+  }).done(function(data) {
+    if ( data == '1' ) {
+      d.find('#testConnectionDialogProgress').html('<p style="font-weight: bold; color: green;">{$dialog_success}</p>');
+    } else {
+      d.find('#testConnectionDialogProgress').html('<p style="font-weight: bold; color: red;">{$dialog_failed}</p>');
+    }
+  }).fail(function() {
+    d.find('#testConnectionDialogProgress').html('<p style="font-weight: bold; color: red;">{$dialog_error}</p>');
+  }).always(function() {
+    var timeEnd = new Date().getTime();
+    var timeTook = new Date(0, 0, 0, 0, 0, 0, timeEnd-timeStart);
+
+    d.find('#testConnectionDialogProgress').append('<p>{$dialog_connection_time} ' + timeTook.getSeconds() + '.' + timeTook.getMilliseconds() + 's</p>');
+  });
+}
+</script>
+EOD;
+
+    $info = '<p><img src="images/icons/locked.gif" border="0">&nbsp;<a href="javascript:openTestConnectionDialog();" style="text-decoration: underline; font-weight: bold;">' . $conn_link_title . '</a></p>' .
+    '<div id="testConnectionDialog" style="display: none;"><p>Server:<br />https://api.stripe.com/v3/</p><div id="testConnectionDialogProgress"><p>' . $conn_link_text . '</p><div id="tcdprogressbar"></div></div></div>' .
+    $js;
+
+    return $info; */
 
     return $btn;
   }

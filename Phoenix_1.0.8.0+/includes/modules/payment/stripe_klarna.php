@@ -2,6 +2,7 @@
 
 /**
   This version: targets phoenix 1.0.8.0+ 
+  v1.0.22 add locales, sort options
   v1.0.21 add authorize/capture option
   v1.0.20 use customer data modules for address
   
@@ -36,7 +37,7 @@ class stripe_klarna extends abstract_payment_module {
   ];
 
   protected $intent;
-  public $signature = 'stripe|stripe_klarna|1.0.20|1.0.8.4';
+  public $signature = 'stripe|stripe_klarna|1.0.22|1.0.8.4';
   public $api_version = '2020-08-27';
 
   function __construct() {
@@ -55,6 +56,8 @@ class stripe_klarna extends abstract_payment_module {
       if (basename($PHP_SELF) == 'modules.php' && isset($_GET['module']) && $_GET['module'] == get_class($this)) {
         $this->description .= $this->getTestLinkInfo();
       }
+
+      $this->order_status = $this->base_constant('PREPARE_ORDER_STATUS_ID');
     }
 
     if (!function_exists('curl_init')) {
@@ -155,146 +158,11 @@ class stripe_klarna extends abstract_payment_module {
           unset($GLOBALS['order']->info['payment_method_raw']);
         }
         
-        // keep the insert and leave as global vars until system/checkout bits in
+        $GLOBALS['customer_notification'] = 0;
 
-        $sql_data_array = [
-          'customers_id' => $customer_id,
-          'customers_name' => $order->customer['firstname'] . ' ' . $order->customer['lastname'],
-          'customers_company' => $order->customer['company'] ?? '',
-          'customers_street_address' => $order->customer['street_address'],
-          'customers_suburb' => $order->customer['suburb'] ?? '',
-          'customers_city' => $order->customer['city'],
-          'customers_postcode' => $order->customer['postcode'],
-          'customers_state' => $order->customer['state'],
-          'customers_country' => $order->customer['country']['title'],
-          'customers_telephone' => $order->customer['telephone'],
-          'customers_email_address' => $order->customer['email_address'],
-          'customers_address_format_id' => $order->customer['format_id'],
-          'delivery_name' => $order->delivery['firstname'] . ' ' . $order->delivery['lastname'],
-          'delivery_company' => $order->delivery['company'] ?? '',
-          'delivery_street_address' => $order->delivery['street_address'],
-          'delivery_suburb' => $order->delivery['suburb'] ?? '',
-          'delivery_city' => $order->delivery['city'],
-          'delivery_postcode' => $order->delivery['postcode'],
-          'delivery_state' => $order->delivery['state'],
-          'delivery_country' => $order->delivery['country']['title'],
-          'delivery_address_format_id' => $order->delivery['format_id'],
-          'billing_name' => $order->billing['firstname'] . ' ' . $order->billing['lastname'],
-          'billing_company' => $order->billing['company'] ?? '',
-          'billing_street_address' => $order->billing['street_address'],
-          'billing_suburb' => $order->billing['suburb'] ?? '',
-          'billing_city' => $order->billing['city'],
-          'billing_postcode' => $order->billing['postcode'],
-          'billing_state' => $order->billing['state'],
-          'billing_country' => $order->billing['country']['title'],
-          'billing_address_format_id' => $order->billing['format_id'],
-          'payment_method' => $order->info['payment_method'],
-          'cc_type' => $order->info['cc_type'] ?? '',
-          'cc_owner' => $order->info['cc_owner'] ?? '',
-          'cc_number' => $order->info['cc_number'] ?? '',
-          'cc_expires' => $order->info['cc_expires'] ?? '',
-          'date_purchased' => 'now()',
-          'last_modified' => 'now()',
-          'orders_status' => $order->info['order_status'],
-          'currency' => $order->info['currency'],
-          'currency_value' => $order->info['currency_value']
-        ];
-
-        tep_db_perform("orders", $sql_data_array);
-
-        $insert_id = tep_db_insert_id();
-
-        if (is_array($order_total_modules->modules)) {
-          foreach ($order_total_modules->modules as $value) {
-            $class = substr($value, 0, strrpos($value, '.'));
-            if ($GLOBALS[$class]->enabled) {
-              $size = sizeof($GLOBALS[$class]->output);
-              for ($i = 0; $i < $size; $i++) {
-                $sql_data_array = [
-                  'orders_id' => $insert_id,
-                  'title' => $GLOBALS[$class]->output[$i]['title'],
-                  'text' => $GLOBALS[$class]->output[$i]['text'],
-                  'value' => $GLOBALS[$class]->output[$i]['value'],
-                  'class' => $GLOBALS[$class]->code,
-                  'sort_order' => $GLOBALS[$class]->sort_order
-                ];
-
-                tep_db_perform("orders_total", $sql_data_array);
-              }
-            }
-          }
-        }
-
-        $sql_data_array = [
-          'orders_id' => $insert_id,
-          'orders_status_id' => $order->info['order_status'],
-          'date_added' => 'now()',
-          'customer_notified' => '',
-          'comments' => $order->info['comments']
-        ];
-        tep_db_perform('orders_status_history', $sql_data_array);
-
-        for ($i = 0, $n = sizeof($order->products); $i < $n; $i++) {
-          $sql_data_array = [
-            'orders_id' => $insert_id,
-            'products_id' => tep_get_prid($order->products[$i]['id']),
-            'products_model' => $order->products[$i]['model'],
-            'products_name' => $order->products[$i]['name'],
-            'products_price' => $order->products[$i]['price'],
-            'final_price' => $order->products[$i]['final_price'],
-            'products_tax' => $order->products[$i]['tax'],
-            'products_quantity' => $order->products[$i]['qty']
-          ];
-
-          tep_db_perform("orders_products", $sql_data_array);
-
-          $order_products_id = tep_db_insert_id();
-
-                    $attributes_exist = '0';
-                    if (isset($order->products[$i]['attributes'])) {
-                        $attributes_exist = '1';
-                        for ($j = 0, $n2 = sizeof($order->products[$i]['attributes']); $j < $n2; $j++) {
-                            if (DOWNLOAD_ENABLED == 'true') {
-                                $attributes_query = "select popt.products_options_name, poval.products_options_values_name, pa.options_values_price, pa.price_prefix, pad.products_attributes_maxdays, pad.products_attributes_maxcount , pad.products_attributes_filename
-                                       from products_options popt, products_options_values poval, products_attributes pa
-                                       left join products_attributes_download pad
-                                       on pa.products_attributes_id=pad.products_attributes_id
-                                       where pa.products_id = '" . (int) $order->products[$i]['id'] . "'
-                                       and pa.options_id = '" . (int) $order->products[$i]['attributes'][$j]['option_id'] . "'
-                                       and pa.options_id = popt.products_options_id
-                                       and pa.options_values_id = '" . (int) $order->products[$i]['attributes'][$j]['value_id'] . "'
-                                       and pa.options_values_id = poval.products_options_values_id
-                                       and popt.language_id = '" . (int) $languages_id . "'
-                                       and poval.language_id = '" . (int) $languages_id . "'";
-                                $attributes = tep_db_query($attributes_query);
-                            } else {
-                                $attributes = tep_db_query("select popt.products_options_name, poval.products_options_values_name, pa.options_values_price, pa.price_prefix from products_options popt, products_options_values poval, products_attributes pa where pa.products_id = '" . (int) $order->products[$i]['id'] . "' and pa.options_id = '" . (int) $order->products[$i]['attributes'][$j]['option_id'] . "' and pa.options_id = popt.products_options_id and pa.options_values_id = '" . (int) $order->products[$i]['attributes'][$j]['value_id'] . "' and pa.options_values_id = poval.products_options_values_id and popt.language_id = '" . (int) $languages_id . "' and poval.language_id = '" . (int) $languages_id . "'");
-                            }
-                            $attributes_values = tep_db_fetch_array($attributes);
-
-                            $sql_data_array = array('orders_id' => $insert_id,
-                                'orders_products_id' => $order_products_id,
-                                'products_options' => $attributes_values['products_options_name'],
-                                'products_options_values' => $attributes_values['products_options_values_name'],
-                                'options_values_price' => $attributes_values['options_values_price'],
-                                'price_prefix' => $attributes_values['price_prefix']);
-
-                            tep_db_perform("orders_products_attributes", $sql_data_array);
-
-                            if ((DOWNLOAD_ENABLED == 'true') && isset($attributes_values['products_attributes_filename']) && tep_not_null($attributes_values['products_attributes_filename'])) {
-                                $sql_data_array = array('orders_id' => $insert_id,
-                                    'orders_products_id' => $order_products_id,
-                                    'orders_products_filename' => $attributes_values['products_attributes_filename'],
-                                    'download_maxdays' => $attributes_values['products_attributes_maxdays'],
-                                    'download_count' => $attributes_values['products_attributes_maxcount']);
-
-                                tep_db_perform("orders_products_download", $sql_data_array);
-                            }
-                        }
-                    }
-                }
-
-                $order_id = $insert_id;
+        require 'includes/system/segments/checkout/build_order_totals.php';
+        require 'includes/system/segments/checkout/insert_order.php';
+        require 'includes/system/segments/checkout/insert_history.php';
 
         $_SESSION['cart_Stripe_Klarna_ID'] = $_SESSION['cartID'] . '-' . $order_id;
       }
@@ -423,6 +291,7 @@ class stripe_klarna extends abstract_payment_module {
       $params['currency'] = $_SESSION['currency'];
       $params['metadata'] = $metadata;
       $params['klarna']['product'] = 'payment';
+      $params['klarna']['locale'] = $this->ensureLocale();
       $params['klarna']['purchase_country'] = $GLOBALS['order']->customer['country']['iso_code_2'];
   //  $params['klarna']['custom_payment_methods'] =  // reqd for US payin4 / installments / payin4,installments (for Pay later and Slice it & both)
 
@@ -464,8 +333,11 @@ EOS;
     //error_log(print_r($this->source, true));
     if (isset($this->source->klarna->payment_method_categories)) {
       $cats = explode(',', $this->source->klarna->payment_method_categories);
+      $ex = self::unsep($this->base_constant('EXCLUDE_OPTIONS'));
+      $cats = array_diff($cats, $ex);
       $count = count($cats);
       if ($count) {
+        asort($cats);
         if (MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API == 'Europe') {
           foreach ($cats as $cat) {
             // frozen version:
@@ -754,21 +626,7 @@ EOS;
               $messageStack->add('header', MODULE_PAYMENT_STRIPE_KLARNA_TRAN_INCOMPLETE, 'warning');
             }
 
-            tep_db_query("delete from customers_basket where customers_id = '" . (int)$_SESSION['customer_id'] . "'");
-            tep_db_query("delete from customers_basket_attributes where customers_id = '" . (int)$_SESSION['customer_id'] . "'");
-
-            if (isset($_SESSION['klarna_error'])) {
-                unset($_SESSION['klarna_error']);
-            }
-
-            $cart->reset(true);
-
-    // unregister session variables used during checkout
-            unset($_SESSION['sendto']);
-            unset($_SESSION['billto']);
-            unset($_SESSION['shipping']);
-            unset($_SESSION['payment']);
-            unset($_SESSION['comments']);
+            $GLOBALS['hooks']->register_pipeline('reset');
 
             unset($_SESSION['stripe_source_id']);
             unset($_SESSION['cart_Stripe_Klarna_ID']);
@@ -782,145 +640,36 @@ EOS;
       // this is run from webhook (so not customer session)
       global $currencies, $customer;
       
-      if ((int)$order_id > 0 && tep_db_num_rows(tep_db_query('select 1 from orders where orders_id = ' . (int)$order_id . ' and customers_id = ' . (int)$customer_id))) {
+      if ((int)$order_id > 0 && tep_db_num_rows($oq = tep_db_query('select orders_status from orders where orders_id = ' . (int)$order_id . ' and customers_id = ' . (int)$customer_id))) {
         
-        $order = new order((int)$order_id);
-        $customer = new customer();
-        
-        $insert_id = $order_id;
+        $o = $oq->fetch_assoc();
 
-        if (DOWNLOAD_ENABLED == 'true') {
-          for ($i = 0, $n = sizeof($order->products); $i < $n; $i++) {
-            $downloads_query = tep_db_query("select opd.orders_products_filename from orders o, orders_products op, orders_products_download opd where o.orders_id = '" . (int)$order_id . "' and o.customers_id = '" . (int)$customer_id . "' and o.orders_id = op.orders_id and op.orders_products_id = opd.orders_products_id and opd.orders_products_filename != ''");
+        if ($o['orders_status'] == $this->base_constant('APPLICATION_ORDER_STATUS_ID')) {
 
-            if (tep_db_num_rows($downloads_query)) {
-                if ($order->content_type == 'physical') {
-                    $order->content_type = 'mixed';
+          $order = new order((int)$order_id);
 
-                    break;
-                } else {
-                    $order->content_type = 'virtual';
-                }
-            } else {
-                if ($order->content_type == 'virtual') {
-                    $order->content_type = 'mixed';
+          $GLOBALS['hooks']->register_pipeline('after');
 
-                    break;
-                } else {
-                    $order->content_type = 'physical';
-                }
-            }
-          }
-        } else {
-            $order->content_type = 'physical';
-        }
-
-// initialized for the email confirmation
-        $products_ordered = '';
-
-        for ($i = 0, $n = sizeof($order->products); $i < $n; $i++) {
-            if (STOCK_LIMITED == 'true') {
-                $stock_query = tep_db_query("select products_quantity from products where products_id = '" . tep_get_prid($order->products[$i]['id']) . "'");
-                $stock_values = tep_db_fetch_array($stock_query);
-
-                $stock_left = $stock_values['products_quantity'] - $order->products[$i]['qty'];
-
-                if (DOWNLOAD_ENABLED == 'true') {
-                    $downloads_query = tep_db_query("select opd.orders_products_filename from orders o, orders_products op, orders_products_download opd where o.orders_id = '" . (int) $order_id . "' and o.customers_id = '" . (int) $customer_id . "' and o.orders_id = op.orders_id and op.orders_products_id = opd.orders_products_id and opd.orders_products_filename != ''");
-                    $downloads_values = tep_db_fetch_array($downloads_query);
-
-                    if (tep_db_num_rows($downloads_query)) {
-                        $stock_left = $stock_values['products_quantity'];
-                    }
-                }
-
-                if ($stock_values['products_quantity'] != $stock_left) {
-                    tep_db_query("update products set products_quantity = '" . (int) $stock_left . "' where products_id = '" . tep_get_prid($order->products[$i]['id']) . "'");
-
-                    if (($stock_left < 1) && (STOCK_ALLOW_CHECKOUT == 'false')) {
-                        tep_db_query("update products set products_status = '0' where products_id = '" . tep_get_prid($order->products[$i]['id']) . "'");
-                    }
-                }
-            }
-
-// Update products_ordered (for bestsellers list)
-            tep_db_query("update products set products_ordered = products_ordered + " . sprintf('%d', $order->products[$i]['qty']) . " where products_id = '" . tep_get_prid($order->products[$i]['id']) . "'");
-
-            $products_ordered_attributes = null;
-            if (isset($order->products[$i]['attributes'])) {
-                for ($j = 0, $n2 = sizeof($order->products[$i]['attributes']); $j < $n2; $j++) {
-                    $products_ordered_attributes .= "\n\t" . $order->products[$i]['attributes'][$j]['option'] . ' ' . $order->products[$i]['attributes'][$j]['value'];
-                }
-            }
-
-//------insert customer choosen option eof ----
-            $products_ordered .= $order->products[$i]['qty'] . ' x ' . $order->products[$i]['name'] . ' (' . $order->products[$i]['model'] . ') = ' . $currencies->display_price($order->products[$i]['final_price'], $order->products[$i]['tax'], $order->products[$i]['qty']) . $products_ordered_attributes . "\n";
-        }
-
-// lets start with the email confirmation
-        $email_order = 
-                MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_INTRO . "\n\n" .
-                STORE_NAME . "\n" .
-                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
-                MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED . "\n" .
-                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
-                MODULE_NOTIFICATIONS_CHECKOUT_TEXT_ORDER_NUMBER . ' ' . $order_id . "\n" .
-                MODULE_NOTIFICATIONS_CHECKOUT_TEXT_INVOICE_URL . ' ' . tep_href_link('account_history_info.php', 'order_id=' . $order_id, 'SSL', false) . "\n" .
-                MODULE_NOTIFICATIONS_CHECKOUT_TEXT_DATE_ORDERED . ' ' . strftime(DATE_FORMAT_LONG) . "\n\n";
-        if (isset($order->info['comments'])) {
-            $email_order .= tep_db_output($order->info['comments']) . "\n\n";
-        }
-        $email_order .= MODULE_NOTIFICATIONS_CHECKOUT_TEXT_PRODUCTS . "\n" .
-                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
-                $products_ordered .
-                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n";
-
-        for ($i = 0, $n = sizeof($order->totals); $i < $n; $i++) {
-            $email_order .= strip_tags($order->totals[$i]['title']) . ' ' . strip_tags($order->totals[$i]['text']) . "\n";
-        }
-        
-        $addr_mod = Guarantor::ensure_global('customer_data')->get_module('address');
-
-        if ($order->content_type != 'virtual') {
-            $email_order .= "\n" . MODULE_NOTIFICATIONS_CHECKOUT_TEXT_DELIVERY_ADDRESS . "\n" .
-                    MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
-                    $addr_mod->format($order->delivery, false, '', "\n") . "\n";
-        }
-
-        $email_order .= "\n" . MODULE_NOTIFICATIONS_CHECKOUT_TEXT_BILLING_ADDRESS . "\n" .
-                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n" .
-                $addr_mod->format($order->billing, false, '', "\n") . "\n\n";
-
-        $email_order .= MODULE_NOTIFICATIONS_CHECKOUT_TEXT_PAYMENT_METHOD . "\n" .
-                MODULE_NOTIFICATIONS_CHECKOUT_SEPARATOR . "\n";
-        $email_order .= $this->title . "\n\n";
-        $email_order .= MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_CODA . "\n\n";
-
-        tep_mail($order->customer['name'], $order->customer['email_address'], MODULE_NOTIFICATIONS_CHECKOUT_TEXT_SUBJECT, $email_order, STORE_OWNER, STORE_OWNER_EMAIL_ADDRESS);
-
-// send emails to other people
-        if (SEND_EXTRA_ORDER_EMAILS_TO != '') {
-            tep_mail('', SEND_EXTRA_ORDER_EMAILS_TO, EMAIL_TEXT_SUBJECT, $email_order, STORE_OWNER, STORE_OWNER_EMAIL_ADDRESS);
-        }
-        
-        $o_status = DEFAULT_ORDERS_STATUS_ID;
-        
-        if (MODULE_PAYMENT_STRIPE_KLARNA_ORDER_STATUS_ID > 0) {
-
-          $o_status = MODULE_PAYMENT_STRIPE_KLARNA_ORDER_STATUS_ID;
+          $customer = new customer();
           
-        }
+          $o_status = $this->base_constant('ORDER_STATUS_ID') ? $this->base_constant('ORDER_STATUS_ID'): DEFAULT_ORDERS_STATUS_ID;
+          
+          $sql_data_array = ['orders_status' => $o_status];
+          tep_db_perform('orders', $sql_data_array, 'update', 'orders_id = ' . (int)$order_id);
+          $sql_data_array = [
+            'orders_id' => $order_id,
+            'orders_status_id' => $o_status,
+            'customer_notified' => 1,
+            'comments' => MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED,
+            'date_added' => 'now()',
+          ];
+          tep_db_perform('orders_status_history', $sql_data_array);
 
-        $sql_data_array = ['orders_status' => $o_status];
-        tep_db_perform('orders', $sql_data_array, 'update', 'orders_id = ' . (int)$order_id);
-        $sql_data_array = [
-          'orders_id' => $order_id,
-          'orders_status_id' => $o_status,
-          'customer_notified' => 1,
-          'comments' => MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED,
-          'date_added' => 'now()',
-        ];
-        tep_db_perform('orders_status_history', $sql_data_array);
+        } else {
+                
+          error_log( sprintf(MODULE_PAYMENT_STRIPE_KLARNA_MISMATCH_ORDER_STATUS, $order_id, $o['orders_status']));
+              
+        }
 
       } else {
         
@@ -1185,6 +934,11 @@ EOD;
           'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_AUTH_DESC,
           'value' => 'Capture',
           'set_func' => 'tep_cfg_select_option([\'Authorise\', \'Capture\'], '
+        ],
+        'MODULE_PAYMENT_STRIPE_KLARNA_EXCLUDE_OPTIONS' => [
+          'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EXCLUDE_TITLE,
+          'desc' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EXCLUDE_DESC,
+          'value' => '',
         ],
         'MODULE_PAYMENT_STRIPE_KLARNA_EVENT_NUMBER' => [
           'title' => MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_EVENT_NUM_TITLE,
