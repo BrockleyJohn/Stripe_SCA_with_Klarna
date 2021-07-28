@@ -377,6 +377,7 @@ EOS;
 EOS;
     } else {
   
+      $formcats = implode(',',$cats);
       $param = (MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API == 'Europe' ? 'container: "#klarna_" + category + "_container",
         payment_method_category: category,' : 'container: "#klarna-combined-container",
       payment_method_categories: available_categories,
@@ -401,7 +402,7 @@ window.klarnaAsyncCallback = function () {
   // - pay_later
   // - pay_over_time
   // - pay_now
-  var catstring = '{$this->source->klarna->payment_method_categories}';
+  var catstring = '{$formcats}';
   var available_categories = catstring.split(',');
   option_count = available_categories.length;
   if (option_count < 1) {
@@ -638,7 +639,7 @@ EOS;
   
     function complete_order_email($order_id, $customer_id) {
       // this is run from webhook (so not customer session)
-      global $currencies, $customer;
+      global $currencies, $customer, $order;
       
       if ((int)$order_id > 0 && tep_db_num_rows($oq = tep_db_query('select orders_status from orders where orders_id = ' . (int)$order_id . ' and customers_id = ' . (int)$customer_id))) {
         
@@ -647,11 +648,10 @@ EOS;
         if ($o['orders_status'] == $this->base_constant('APPLICATION_ORDER_STATUS_ID')) {
 
           $order = new order((int)$order_id);
-
+          $customer = new customer((int)$customer_id);
+          
           $GLOBALS['hooks']->register_pipeline('after');
 
-          $customer = new customer();
-          
           $o_status = $this->base_constant('ORDER_STATUS_ID') ? $this->base_constant('ORDER_STATUS_ID'): DEFAULT_ORDERS_STATUS_ID;
           
           $sql_data_array = ['orders_status' => $o_status];

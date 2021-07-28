@@ -55,7 +55,7 @@ chdir('../../../../');
 require('includes/application_top.php');
 
 //include_once("includes/languages/{$language}/checkout_process.php");
-include_once("includes/languages/{$language}/modules/notifications/n_checkout.php");
+//include_once("includes/languages/{$language}/modules/notifications/n_checkout.php");
 if (! class_exists('stripe_klarna')) {
   require_once("includes/languages/{$language}/modules/payment/stripe_klarna.php");
   require_once('includes/modules/payment/stripe_klarna.php');
@@ -65,6 +65,7 @@ $payload = @file_get_contents('php://input');
 $sig_header = $_SERVER['HTTP_STRIPE_SIGNATURE'];
 $event = null;
 $stripe_klarna = new stripe_klarna();
+$SESSION['payment'] = 'stripe_klarna';
 $endpoint_secret = $stripe_klarna->webhook_secret;
 
 try {
