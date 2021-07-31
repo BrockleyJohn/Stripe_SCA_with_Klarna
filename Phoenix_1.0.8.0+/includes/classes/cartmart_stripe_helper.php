@@ -84,7 +84,7 @@ trait cartmart_stripe_helper {
 
   function event_log($customer_id, $action, $request, $response) {
     if ($this->base_constant('LOG') == "True") {
-      tep_db_query("insert into stripe_event_log (customer_id, action, request, response, date_added) values ('" . $customer_id . "', '" . $action . "', '" . tep_db_input($request) . "', '" . tep_db_input($response) . "', now())");
+      tep_db_query("INSERT INTO stripe_event_log (customer_id, action, request, response, date_added) VALUES ('" . $customer_id . "', '" . $action . "', '" . tep_db_input($request) . "', '" . tep_db_input($response) . "', now())");
     }
   }
 

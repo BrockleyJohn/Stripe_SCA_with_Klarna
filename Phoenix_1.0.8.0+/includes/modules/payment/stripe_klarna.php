@@ -1,8 +1,8 @@
 <?php
-
 /**
   This version: targets phoenix 1.0.8.0+ 
-  v1.0.22 add locales, sort options
+  v1.0.23 add webhook order updates notify module
+  v1.0.22 add locales, sort options, use checkout & after pipelines
   v1.0.21 add authorize/capture option
   v1.0.20 use customer data modules for address
   
@@ -37,7 +37,7 @@ class stripe_klarna extends abstract_payment_module {
   ];
 
   protected $intent;
-  public $signature = 'stripe|stripe_klarna|1.0.22|1.0.8.4';
+  public $signature = 'stripe|stripe_klarna|1.0.23|1.0.8.4';
   public $api_version = '2020-08-27';
 
   function __construct() {
@@ -55,20 +55,23 @@ class stripe_klarna extends abstract_payment_module {
 
       if (basename($PHP_SELF) == 'modules.php' && isset($_GET['module']) && $_GET['module'] == get_class($this)) {
         $this->description .= $this->getTestLinkInfo();
+        if (!(defined('MODULE_NOTIFICATIONS_UPDATE_ORDER_WEBHOOK_STATUS') && MODULE_NOTIFICATIONS_UPDATE_ORDER_WEBHOOK_STATUS == 'True')) {
+          $this->description = '<div class="alert alert-danger">' . $this->base_constant('ERROR_WEBHOOK_NOTIFICATIONS') . '</div>' . $this->description;
+        }
       }
 
       $this->order_status = $this->base_constant('PREPARE_ORDER_STATUS_ID');
     }
 
     if (!function_exists('curl_init')) {
-      $this->description = '<div class="secWarning">' . $this->base_constant('ERROR_ADMIN_CURL') . '</div>' . $this->description;
+      $this->description = '<div class="alert alert-danger">' . $this->base_constant('ERROR_ADMIN_CURL') . '</div>' . $this->description;
 
       $this->enabled = false;
     }
 
     if ($this->enabled === true) {
       if (($this->base_constant('TRANSACTION_SERVER') == 'Live' && (!tep_not_null($this->base_constant('LIVE_PUBLISHABLE_KEY')) || !tep_not_null($this->base_constant('LIVE_SECRET_KEY')))) || ($this->base_constant('TRANSACTION_SERVER') == 'Test' && (!tep_not_null($this->base_constant('TEST_PUBLISHABLE_KEY')) || !tep_not_null($this->base_constant('TEST_SECRET_KEY'))))) {
-        $this->description = '<div class="secWarning">' . $this->base_constant('ERROR_ADMIN_CONFIGURATION') . '</div>' . $this->description;
+        $this->description = '<div class="alert alert-danger">' . $this->base_constant('ERROR_ADMIN_CONFIGURATION') . '</div>' . $this->description;
 
         $this->enabled = false;
       } else {
@@ -377,6 +380,8 @@ EOS;
 EOS;
     } else {
   
+      $matc = MODULE_PAYMENT_STRIPE_KLARNA_MATC_CONTINUE;
+      
       $formcats = implode(',',$cats);
       $param = (MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API == 'Europe' ? 'container: "#klarna_" + category + "_container",
         payment_method_category: category,' : 'container: "#klarna-combined-container",
@@ -386,8 +391,8 @@ EOS;
       $script .= <<<EOS
 <script>
 let confirmBtn = document.querySelector('form[name="checkout_confirmation"] .btn-success');
-confirmBtn.id = 'pay-button';
-
+let MATC = document.getElementById('inputMATC');
+  
 // need to keep track of available options in global scope
 var option_count = 0;
 // Load the Klarna JavaScript SDK
@@ -406,7 +411,7 @@ window.klarnaAsyncCallback = function () {
   var available_categories = catstring.split(',');
   option_count = available_categories.length;
   if (option_count < 1) {
-    document.getElementById('pay-button').disabled = true;
+    confirmBtn.disabled = true;
   } else {
     available_categories.forEach(function (category) {
       Klarna.Payments.load({
@@ -425,7 +430,7 @@ window.klarnaAsyncCallback = function () {
           }
           option_count--;
           if (option_count < 1) {
-            document.getElementById('pay-button').disabled = true;
+            confirmBtn.disabled = true;
           }
         }
       });
@@ -452,11 +457,16 @@ EOS;
       $param = (MODULE_PAYMENT_STRIPE_KLARNA_GLOBAL_API == 'Europe' ? 'payment_method_category: selectedCategory' : 'instance_id : "klarna-payments-instance-id"');
       $script .= <<<EOS
 
-document.getElementById("pay-button").addEventListener("click", function(e){
+confirmBtn.addEventListener("click", function(e){
 
   // stop the form submitting unless it gets approved
   e.preventDefault();
   
+  if (null !== MATC && MATC.checked == false) {
+    alert('$matc');
+    return;
+  }
+
   // get the category the customer chose(using your own code)
   var selectedCategory = getSelectedCategory();
   // Submit the payment for authorization with the selected category
@@ -479,7 +489,7 @@ document.getElementById("pay-button").addEventListener("click", function(e){
             }
             option_count--;
             if (option_count < 1) {
-              document.getElementById('pay-button').disabled = true;
+              confirmBtn.disabled = true;
             }
           }
         }
@@ -647,23 +657,42 @@ EOS;
 
         if ($o['orders_status'] == $this->base_constant('APPLICATION_ORDER_STATUS_ID')) {
 
-          $order = new order((int)$order_id);
-          $customer = new customer((int)$customer_id);
-          
-          $GLOBALS['hooks']->register_pipeline('after');
-
           $o_status = $this->base_constant('ORDER_STATUS_ID') ? $this->base_constant('ORDER_STATUS_ID'): DEFAULT_ORDERS_STATUS_ID;
           
           $sql_data_array = ['orders_status' => $o_status];
           tep_db_perform('orders', $sql_data_array, 'update', 'orders_id = ' . (int)$order_id);
+
+          $order = new order((int)$order_id);
+          $customer = new customer((int)$customer_id);
+
+          $customer_comment = '';
+          $com_q = tep_db_query(sprintf('SELECT comments FROM orders_status_history WHERE orders_id = %d ORDER BY orders_status_history_id LIMIT 1', (int)$order_id));
+          if ($com = $com_q->fetch_assoc()) {
+            $customer_comment = $com['comments'];
+          }
+          
+          $data = [
+            'orders_id' => (int)$order_id,
+            'customers_name' => $order->customer['name'],
+            'customers_email_address' => $order->customer['email_address'],
+            'notify_comments' => MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED . (strlen($customer_comment) ? sprintf(MODULE_PAYMENT_STRIPE_KLARNA_CUSTOMER_COMMENT, $customer_comment) : ''),
+            'date_purchased' => $order->info['date_purchased'],
+            'status_name' => $order->info['orders_status']
+          ];
+          $notified = Notifications::notify('update_order_webhook', $data) ? 1 : 0;
+
           $sql_data_array = [
             'orders_id' => $order_id,
             'orders_status_id' => $o_status,
-            'customer_notified' => 1,
+            'customer_notified' => $notified,
             'comments' => MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED,
             'date_added' => 'now()',
           ];
           tep_db_perform('orders_status_history', $sql_data_array);
+
+          $GLOBALS['customer_notification'] = 0; // suppress email in after process (just do the stock bit)
+
+          $GLOBALS['hooks']->register_pipeline('after');
 
         } else {
                 
@@ -800,7 +829,7 @@ EOSQL
     function get_parameters() {
       if (tep_db_num_rows(tep_db_query("show tables like 'stripe_event_log'")) != 1) {
         $sql = <<<EOD
-CREATE TABLE stripe_event_log (
+CREATE TABLE IF NOT EXISTS stripe_event_log (
   id int NOT NULL auto_increment,
   customer_id int NOT NULL,
   action varchar(255) NOT NULL,

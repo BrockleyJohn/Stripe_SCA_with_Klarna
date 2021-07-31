@@ -3,7 +3,7 @@
 
   language definitions for Stripe-Klarna payment module
  
-  version 1.1 March 2021
+  version 1.2 July 2021
 
   author: John Ferguson @BrockleyJohn oscommerce@sewebsites.net
   copyright (c) 2020 SEwebsites
@@ -18,12 +18,15 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_TEXT_PUBLIC_TITLE', 'Buy now pay later with Klarna');
   define('MODULE_PAYMENT_STRIPE_KLARNA_TEXT_DESCRIPTION', 'Klarna payments as a Stripe Source');
 
-// email texts
+  const MODULE_PAYMENT_STRIPE_KLARNA_MATC_CONTINUE = 'Please accept legal agreements to continue';
+
+  // email texts
   define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_SUBJECT', 'Klarna setup failed - order not placed');
   define('MODULE_PAYMENT_STRIPE_KLARNA_FAIL_EMAIL_TEXT', "Dear %s,\n\nSorry but there was a problem setting up the Klarna payment arrangement for order %s. Please contact us to make alternative arrangements to pay.");
 
   define('MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_INTRO', 'Thanks for your order.');
   define('MODULE_PAYMENT_STRIPE_KLARNA_CONFIRMED','Klarna payment confirmed - order accepted');
+  const MODULE_PAYMENT_STRIPE_KLARNA_CUSTOMER_COMMENT = "\n\nYour notes on this order: \n%s";
   define('MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_TEXT_INVOICE_URL', 'Order details:');
   define('MODULE_PAYMENT_STRIPE_KLARNA_EMAIL_CODA', 'If you have any questions about your order or payments please contact us.');
 
@@ -34,6 +37,7 @@
   define('MODULE_PAYMENT_STRIPE_KLARNA_APP_FAILED_ORDER_STATUS_TEXT', 'Setup failed [Stripe Klarna]');
 
 // module configuration
+  const MODULE_PAYMENT_STRIPE_KLARNA_ERROR_WEBHOOK_NOTIFICATIONS = 'Webhook notifications are not enabled! Customers will not get an email when their finance is approved. Please install + enable the notifications module Update order status via webhook';
   define('MODULE_PAYMENT_STRIPE_KLARNA_ERROR_ADMIN_CURL', 'This module requires cURL to be enabled in PHP and will not load until it has been enabled on this webserver.');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ERROR_ADMIN_CONFIGURATION', 'This module will not load until the Publishable Key and Secret Key parameters have been configured. Please edit and configure the settings of this module.');
   define('MODULE_PAYMENT_STRIPE_KLARNA_ADMIN_STATUS_TITLE', 'Enable Stripe Klarna Module');
