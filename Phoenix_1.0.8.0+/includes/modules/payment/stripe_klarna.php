@@ -679,7 +679,11 @@ EOS;
             'date_purchased' => $order->info['date_purchased'],
             'status_name' => $order->info['orders_status']
           ];
-          $notified = Notifications::notify('update_order_webhook', $data) ? 1 : 0;
+          if (class_exists('Notifications')) {
+            $notified = Notifications::notify('update_order_webhook', $data) ? 1 : 0;
+          } else {
+            $notified = tep_notify('update_order_webhook', $data) ? 1 : 0;
+          }
 
           $sql_data_array = [
             'orders_id' => $order_id,
