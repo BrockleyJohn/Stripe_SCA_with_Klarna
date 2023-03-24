@@ -21,6 +21,10 @@ class ApiRequestor
      * @var HttpClient\ClientInterface
      */
     private static $_httpClient;
+    /**
+     * @var HttpClient\StreamingClientInterface
+     */
+    private static $_streamingHttpClient;
 
     /**
      * @var RequestTelemetry
@@ -124,6 +128,26 @@ class ApiRequestor
     }
 
     /**
+     * @param string     $method
+     * @param string     $url
+     * @param callable $readBodyChunkCallable
+     * @param null|array $params
+     * @param null|array $headers
+     *
+     * @throws Exception\ApiErrorException
+     */
+    public function requestStream($method, $url, $readBodyChunkCallable, $params = null, $headers = null)
+    {
+        $params = $params ?: [];
+        $headers = $headers ?: [];
+        list($rbody, $rcode, $rheaders, $myApiKey) =
+        $this->_requestRawStreaming($method, $url, $params, $headers, $readBodyChunkCallable);
+        if ($rcode >= 300) {
+            $this->_interpretResponse($rbody, $rcode, $rheaders);
+        }
+    }
+
+    /**
      * @param string $rbody a JSON string
      * @param int $rcode
      * @param array $rheaders
@@ -187,14 +211,19 @@ class ApiRequestor
                 // no break
             case 404:
                 return Exception\InvalidRequestException::factory($msg, $rcode, $rbody, $resp, $rheaders, $code, $param);
+
             case 401:
                 return Exception\AuthenticationException::factory($msg, $rcode, $rbody, $resp, $rheaders, $code);
+
             case 402:
                 return Exception\CardException::factory($msg, $rcode, $rbody, $resp, $rheaders, $code, $declineCode, $param);
+
             case 403:
                 return Exception\PermissionException::factory($msg, $rcode, $rbody, $resp, $rheaders, $code);
+
             case 429:
                 return Exception\RateLimitException::factory($msg, $rcode, $rbody, $resp, $rheaders, $code, $param);
+
             default:
                 return Exception\UnknownApiErrorException::factory($msg, $rcode, $rbody, $resp, $rheaders, $code);
         }
@@ -218,16 +247,22 @@ class ApiRequestor
         switch ($errorCode) {
             case 'invalid_client':
                 return Exception\OAuth\InvalidClientException::factory($description, $rcode, $rbody, $resp, $rheaders, $errorCode);
+
             case 'invalid_grant':
                 return Exception\OAuth\InvalidGrantException::factory($description, $rcode, $rbody, $resp, $rheaders, $errorCode);
+
             case 'invalid_request':
                 return Exception\OAuth\InvalidRequestException::factory($description, $rcode, $rbody, $resp, $rheaders, $errorCode);
+
             case 'invalid_scope':
                 return Exception\OAuth\InvalidScopeException::factory($description, $rcode, $rbody, $resp, $rheaders, $errorCode);
+
             case 'unsupported_grant_type':
                 return Exception\OAuth\UnsupportedGrantTypeException::factory($description, $rcode, $rbody, $resp, $rheaders, $errorCode);
+
             case 'unsupported_response_type':
                 return Exception\OAuth\UnsupportedResponseTypeException::factory($description, $rcode, $rbody, $resp, $rheaders, $errorCode);
+
             default:
                 return Exception\OAuth\UnknownOAuthErrorException::factory($description, $rcode, $rbody, $resp, $rheaders, $errorCode);
         }
@@ -260,9 +295,8 @@ class ApiRequestor
     /**
      * @static
      *
-     * @param string $disabledFunctionsOutput - String value of the 'disable_function' setting, as output by \ini_get('disable_functions')
+     * @param string $disableFunctionsOutput - String value of the 'disable_function' setting, as output by \ini_get('disable_functions')
      * @param string $functionName - Name of the function we are interesting in seeing whether or not it is disabled
-     * @param mixed $disableFunctionsOutput
      *
      * @return bool
      */
@@ -317,18 +351,7 @@ class ApiRequestor
         ];
     }
 
-    /**
-     * @param string $method
-     * @param string $url
-     * @param array $params
-     * @param array $headers
-     *
-     * @throws Exception\AuthenticationException
-     * @throws Exception\ApiConnectionException
-     *
-     * @return array
-     */
-    private function _requestRaw($method, $url, $params, $headers)
+    private function _prepareRequest($method, $url, $params, $headers)
     {
         $myApiKey = $this->_apiKey;
         if (!$myApiKey) {
@@ -405,6 +428,24 @@ class ApiRequestor
             $rawHeaders[] = $header . ': ' . $value;
         }
 
+        return [$absUrl, $rawHeaders, $params, $hasFile, $myApiKey];
+    }
+
+    /**
+     * @param string $method
+     * @param string $url
+     * @param array $params
+     * @param array $headers
+     *
+     * @throws Exception\AuthenticationException
+     * @throws Exception\ApiConnectionException
+     *
+     * @return array
+     */
+    private function _requestRaw($method, $url, $params, $headers)
+    {
+        list($absUrl, $rawHeaders, $params, $hasFile, $myApiKey) = $this->_prepareRequest($method, $url, $params, $headers);
+
         $requestStartMs = Util\Util::currentTimeMillis();
 
         list($rbody, $rcode, $rheaders) = $this->httpClient()->request(
@@ -417,7 +458,46 @@ class ApiRequestor
 
         if (isset($rheaders['request-id'])
         && \is_string($rheaders['request-id'])
-        && \strlen($rheaders['request-id']) > 0) {
+        && '' !== $rheaders['request-id']) {
+            self::$requestTelemetry = new RequestTelemetry(
+                $rheaders['request-id'],
+                Util\Util::currentTimeMillis() - $requestStartMs
+            );
+        }
+
+        return [$rbody, $rcode, $rheaders, $myApiKey];
+    }
+
+    /**
+     * @param string $method
+     * @param string $url
+     * @param array $params
+     * @param array $headers
+     * @param callable $readBodyChunkCallable
+     *
+     * @throws Exception\AuthenticationException
+     * @throws Exception\ApiConnectionException
+     *
+     * @return array
+     */
+    private function _requestRawStreaming($method, $url, $params, $headers, $readBodyChunkCallable)
+    {
+        list($absUrl, $rawHeaders, $params, $hasFile, $myApiKey) = $this->_prepareRequest($method, $url, $params, $headers);
+
+        $requestStartMs = Util\Util::currentTimeMillis();
+
+        list($rbody, $rcode, $rheaders) = $this->streamingHttpClient()->requestStream(
+            $method,
+            $absUrl,
+            $rawHeaders,
+            $params,
+            $hasFile,
+            $readBodyChunkCallable
+        );
+
+        if (isset($rheaders['request-id'])
+        && \is_string($rheaders['request-id'])
+        && '' !== $rheaders['request-id']) {
             self::$requestTelemetry = new RequestTelemetry(
                 $rheaders['request-id'],
                 Util\Util::currentTimeMillis() - $requestStartMs
@@ -494,6 +574,16 @@ class ApiRequestor
     /**
      * @static
      *
+     * @param HttpClient\StreamingClientInterface $client
+     */
+    public static function setStreamingHttpClient($client)
+    {
+        self::$_streamingHttpClient = $client;
+    }
+
+    /**
+     * @static
+     *
      * Resets any stateful telemetry data
      */
     public static function resetTelemetry()
@@ -511,5 +601,17 @@ class ApiRequestor
         }
 
         return self::$_httpClient;
+    }
+
+    /**
+     * @return HttpClient\StreamingClientInterface
+     */
+    private function streamingHttpClient()
+    {
+        if (!self::$_streamingHttpClient) {
+            self::$_streamingHttpClient = HttpClient\CurlClient::instance();
+        }
+
+        return self::$_streamingHttpClient;
     }
 }
