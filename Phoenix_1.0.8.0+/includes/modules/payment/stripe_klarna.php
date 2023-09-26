@@ -1,6 +1,7 @@
 <?php
 /**
   This version: targets phoenix 1.0.8.0+ 
+  v1.0.24 reverse calc rounding errors
   v1.0.23 add webhook order updates notify module
   v1.0.22 add locales, sort options, use checkout & after pipelines
   v1.0.21 add authorize/capture option
@@ -277,10 +278,13 @@ class stripe_klarna extends abstract_payment_module {
       }
     }
 
-    if (abs($charges - $GLOBALS['order']->info['total']) > 0.01) {
+    if (abs($charges - $GLOBALS['order']->info['total']) > 0.05) { // not close enough to be a rounding error
       $caught_error = sprintf(MODULE_PAYMENT_STRIPE_KLARNA_ERROR_TOTAL, $charges, $GLOBALS['order']->info['total']);
     } else {
       $caught_error = '';
+      if (abs($charges - $GLOBALS['order']->info['total']) > 0.01 && isset($source_items) && is_array($source_items) && count($source_items)) { // fix rounding errors by back-calculating
+        $source_items[0]['amount'] += $GLOBALS['order']->info['total'] - $charges;
+      }
     }
 
     if (!isset($_SESSION['stripe_source_id'])) {
@@ -655,7 +659,7 @@ EOS;
         
         $o = $oq->fetch_assoc();
 
-        if ($o['orders_status'] == $this->base_constant('APPLICATION_ORDER_STATUS_ID')) {
+        if ($o['orders_status'] == $this->base_constant('APPLICATION_ORDER_STATUS_ID') || $o['orders_status'] == $this->base_constant('PREPARE_ORDER_STATUS_ID')) {
 
           $o_status = $this->base_constant('ORDER_STATUS_ID') ? $this->base_constant('ORDER_STATUS_ID'): DEFAULT_ORDERS_STATUS_ID;
           
